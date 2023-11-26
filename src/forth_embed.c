@@ -39,6 +39,7 @@ enum token_type {
 	tt_begin,
 	tt_until,
 
+	tt_constant,
 	tt_at, //dereferencing @
 	tt_setvalue, // !
 	tt_setfunction, // :
@@ -107,6 +108,7 @@ make_key_word_func(loop, "loop", tt_loop);
 make_key_word_func(begin, "begin", tt_begin);
 make_key_word_func(until, "until", tt_until);
 
+make_key_word_func(constant, "constant", tt_constant);
 make_key_word_func(at, "@", tt_at);
 make_key_word_func(setvalue, "!", tt_setvalue);
 make_key_word_func(setfunction, ":", tt_setfunction);
@@ -168,6 +170,7 @@ struct token_type_pair key_words[] = {
 	{tt_begin, key_word_func_by(begin)},
 	{tt_until, key_word_func_by(until)},
 
+	{tt_constant, key_word_func_by(constant)},
 	{tt_at, key_word_func_by(at)},
 	{tt_setvalue, key_word_func_by(setvalue)},
 	{tt_setfunction, key_word_func_by(setfunction)},
@@ -250,6 +253,14 @@ struct function {
 
 static struct function function_table[10];
 static int function_table_count = 0;
+
+struct constant {
+	const char* name;
+	int value;
+};
+
+static struct constant constant_table[10];
+static int constant_table_count = 0;
 
 // ------------------------- STACK OPERATION -------------------------
 
@@ -461,6 +472,23 @@ int cull_function(const char* name) {
 	return -1;
 }
 
+void set_constant(const struct token* stream, int position) {
+	const struct token name_token = stream[position + 1];
+	constant_table[constant_table_count] = (struct constant){ .name = name_token.data.name, .value = stack_pop() };
+	constant_table_count++;
+}
+
+bool get_constant(const char* name) {
+	for (int i = 0; i < constant_table_count; i++) {
+		const struct constant current = constant_table[i];
+		if (strcmp(current.name, name) == 0) {
+			stack_push(current.value);
+			return true;
+		}
+	}
+	return false;
+}
+
 int do_loop(const struct token* stream, int position) {
 	int start_index = stack_pop();
 	int end_index = stack_pop();
@@ -533,12 +561,21 @@ void eval(const struct token* stream) {
 			dot_op();
 		}
 
-		if (current_token_type == tt_ident) {
-			int jump_to_position;
+		if (current_token_type == tt_constant) {
+			set_constant(stream, current_pos);
+			current_pos++;
+		}
 
-			if (jump_to_position = cull_function(current_token.data.name)) { // cull function
+		if (current_token_type == tt_ident) {
+			int jump_to_position = cull_function(current_token.data.name);
+
+			if (jump_to_position != -1) { // cull function
 				return_stack_push(current_pos);
 				current_pos = jump_to_position;
+			}
+			
+			if (jump_to_position == -1) {
+				get_constant(current_token.data.name);
 			}
 		}
 
