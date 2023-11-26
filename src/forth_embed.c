@@ -36,6 +36,8 @@ enum token_type {
 	tt_then,
 	tt_do,
 	tt_loop,
+	tt_begin,
+	tt_until,
 
 	tt_at, //dereferencing @
 	tt_setvalue, // !
@@ -102,6 +104,8 @@ make_key_word_func(elsesc, "else", tt_else);
 make_key_word_func(then, "then", tt_then);
 make_key_word_func(dosc, "do", tt_do);
 make_key_word_func(loop, "loop", tt_loop);
+make_key_word_func(begin, "begin", tt_begin);
+make_key_word_func(until, "until", tt_until);
 
 make_key_word_func(at, "@", tt_at);
 make_key_word_func(setvalue, "!", tt_setvalue);
@@ -161,6 +165,8 @@ struct token_type_pair key_words[] = {
 	{tt_then, key_word_func_by(then)},
 	{tt_do, key_word_func_by(dosc)},
 	{tt_loop, key_word_func_by(loop)},
+	{tt_begin, key_word_func_by(begin)},
+	{tt_until, key_word_func_by(until)},
 
 	{tt_at, key_word_func_by(at)},
 	{tt_setvalue, key_word_func_by(setvalue)},
@@ -177,7 +183,8 @@ struct token_type_pair key_words[] = {
 struct token* tokenizer(const char* stream) {
 	char* stream_copy = strdup(stream);
 
-	char* word = strtok(stream_copy, " ");
+	const char* delimiter = " ,\n";
+	char* word = strtok(stream_copy, delimiter);
 
 	struct token* tokens = calloc(100, sizeof(struct token));
 	int token_count = 0;
@@ -498,6 +505,14 @@ void eval(const struct token* stream) {
 			equal_op();
 		}
 
+		if (current_token_type == tt_invert) {
+			invert_op();
+		}
+
+		if (current_token_type == tt_dup) {
+			dup_op();
+		}
+
 		if (current_token_type == tt_plus) {
 			plus_op();
 		}
@@ -550,6 +565,19 @@ void eval(const struct token* stream) {
 
 		if (current_token_type == tt_do) {
 			current_pos = do_loop(stream, current_pos);
+		}
+
+		if (current_token_type == tt_begin) {
+			return_stack_push(current_pos -1);
+		}
+
+		if (current_token_type == tt_until) {
+			int value = stack_pop();
+			if (value == -1) {
+				current_pos = return_stack_pop();
+			} else {
+				return_stack_pop();
+			}
 		}
 
 		if (current_token_type == tt_loop) {
