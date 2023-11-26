@@ -39,7 +39,9 @@ enum token_type {
 	tt_begin,
 	tt_until,
 
+	tt_allot,
 	tt_constant,
+	tt_variable,
 	tt_at, //dereferencing @
 	tt_setvalue, // !
 	tt_setfunction, // :
@@ -108,7 +110,9 @@ make_key_word_func(loop, "loop", tt_loop);
 make_key_word_func(begin, "begin", tt_begin);
 make_key_word_func(until, "until", tt_until);
 
+make_key_word_func(allot, "allot", tt_allot);
 make_key_word_func(constant, "constant", tt_constant);
+make_key_word_func(variable, "variable", tt_variable);
 make_key_word_func(at, "@", tt_at);
 make_key_word_func(setvalue, "!", tt_setvalue);
 make_key_word_func(setfunction, ":", tt_setfunction);
@@ -170,7 +174,9 @@ struct token_type_pair key_words[] = {
 	{tt_begin, key_word_func_by(begin)},
 	{tt_until, key_word_func_by(until)},
 
+	{tt_allot, key_word_func_by(allot)},
 	{tt_constant, key_word_func_by(constant)},
+	{tt_variable, key_word_func_by(variable)},
 	{tt_at, key_word_func_by(at)},
 	{tt_setvalue, key_word_func_by(setvalue)},
 	{tt_setfunction, key_word_func_by(setfunction)},
@@ -261,6 +267,18 @@ struct constant {
 
 static struct constant constant_table[10];
 static int constant_table_count = 0;
+
+
+struct variable {
+	const char* name;
+	int pointer;
+};
+
+
+static struct variable variable_table[10];
+static int variable_table_count = 0;
+static int integer_memory[1000];
+static int integer_memory_pointer_top = 0;
 
 // ------------------------- STACK OPERATION -------------------------
 
@@ -489,6 +507,31 @@ bool get_constant(const char* name) {
 	return false;
 }
 
+
+void set_variable(const struct token* stream, int position) {
+	const struct token name_token = stream[position + 1];
+	variable_table[variable_table_count] = (struct variable){ .name = name_token.data.name, .pointer = integer_memory_pointer_top };
+	variable_table_count++;
+	integer_memory_pointer_top++;
+}
+
+bool get_variable(const char* name) {
+	for (int i = 0; i < variable_table_count; i++) {
+		const struct variable current = variable_table[i];
+		if (strcmp(current.name, name) == 0) {
+			stack_push(current.pointer);
+			return true;
+		}
+	}
+	return false;
+}
+
+void allot_op() {
+	int offset = stack_pop();
+	integer_memory_pointer_top += offset;
+}
+
+
 int do_loop(const struct token* stream, int position) {
 	int start_index = stack_pop();
 	int end_index = stack_pop();
@@ -575,7 +618,10 @@ void eval(const struct token* stream) {
 			}
 			
 			if (jump_to_position == -1) {
-				get_constant(current_token.data.name);
+				bool is_set = get_constant(current_token.data.name);
+				if (not is_set) {
+					get_variable(current_token.data.name);
+				}
 			}
 		}
 
@@ -621,9 +667,30 @@ void eval(const struct token* stream) {
 			current_pos = return_stack_pop();
 		}
 
+		if (current_token_type == tt_variable) {
+			set_variable(stream, current_pos);
+			current_pos++;
+		}
+
+		if (current_token_type == tt_setvalue) {
+			int pointer = stack_pop();
+			integer_memory[pointer] = stack_pop();
+		}
+
+		if (current_token_type == tt_at) {
+			int pointer = stack_pop();
+			stack_push(integer_memory[pointer]);
+		}
+
+		if (current_token_type == tt_allot) {
+			allot_op();
+		}
+
 		if (current_token_type == tt_endof) {
 			break;
 		}
+
+		
 	}
 }
 
