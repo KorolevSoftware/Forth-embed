@@ -576,6 +576,22 @@ void eval(const struct token* stream) {
 			equal_op();
 		}
 
+		if (current_token_type == tt_less) {
+			less_op();
+		}
+
+		if (current_token_type == tt_great) {
+			great_op();
+		}
+
+		if (current_token_type == tt_and) {
+			and_op();
+		}
+
+		if (current_token_type == tt_or) {
+			or_op();
+		}
+
 		if (current_token_type == tt_invert) {
 			invert_op();
 		}
@@ -689,8 +705,6 @@ void eval(const struct token* stream) {
 		if (current_token_type == tt_endof) {
 			break;
 		}
-
-		
 	}
 }
 
