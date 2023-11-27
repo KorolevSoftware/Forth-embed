@@ -413,60 +413,50 @@ void dividing_op() {
 
 // ------------------------- CONTROLL FLOW OPERATIONS -------------------------
 
-
-int if_op(const struct token* stream, int position) {
-	const struct token main_body = stream[position + 1];
-
-	int cmp = stack_pop();
-
-	if (cmp == -1) {
-		return position;
-	}
-
-	int temp_position = position+1;
+int find_controll_flow_token(const struct token* stream, int position, const enum token_type incriment, const enum token_type find) {
+	int temp_position = position + 1;
 	int if_stack = 0;
 	while (true) {
-		if (stream[temp_position].type == tt_if) {
+		if (stream[temp_position].type == incriment) {
 			if_stack++;
 		}
 
-		if (stream[temp_position].type == tt_then) {
+		if (stream[temp_position].type == find) {
 			if (if_stack == 0) {
 				return temp_position;
 			} else {
 				if_stack--;
 			}
 		}
-		if (stream[temp_position].type == tt_else) {
-			if (if_stack == 0) {
-				return temp_position;
-			}
+
+		if (stream[temp_position].type == tt_endof) {
+			return -1;
 		}
+
+		if (stream[temp_position].type == tt_semicolon) {
+			return -1;
+		}
+
 		temp_position++;
 	}
 }
 
-int skip_else(const struct token* stream, int position) {
-	int if_stack = 0;
-	int temp_position = position + 1;
-	while (true) {
-		if (stream[temp_position].type == tt_if) {
-			if_stack++;
-		}
 
-		if (stream[temp_position].type == tt_then) {
-			if (if_stack == 0) {
-				return temp_position;
-			} else {
-				if_stack--;
-			}
-		}
-		if (stream[temp_position].type == tt_else) {
-			if (if_stack == 0) {
-				return temp_position;
-			}
-		}
-		temp_position++;
+int if_op(const struct token* stream, int position) {
+	int cmp = stack_pop();
+	
+	int find_else = find_controll_flow_token(stream, position, tt_if, tt_else);
+	int find_then = find_controll_flow_token(stream, position, tt_if, tt_then);
+
+	if (cmp == -1) {
+		return_stack_push(find_then);
+		return position;
+	}
+
+	if (find_else > 0) {
+		return find_else;
+	} else {
+		return find_then;
 	}
 }
 
@@ -545,22 +535,7 @@ int do_loop(const struct token* stream, int position) { // TODO rewrite danger w
 		stack_push(start_index + 1);
 		return position;
 	} else {
-		int if_stack = 0;
-		int temp_position = position + 1;
-		while (true) {
-			if (stream[temp_position].type == tt_do) {
-				if_stack++;
-			}
-
-			if (stream[temp_position].type == tt_loop) {
-				if (if_stack == 0) {
-					return temp_position;
-				} else {
-					if_stack--;
-				}
-			}
-			temp_position++;
-		}
+		return find_controll_flow_token(stream, position, tt_do, tt_loop);
 	}
 }
 
@@ -659,9 +634,7 @@ void eval(const struct token* stream, int current_pos) {
 			current_pos++;
 		}
 
-		if (current_token_type == tt_else) {
-			current_pos = skip_else(stream, current_pos);
-		}
+	
 
 		if (current_token_type == tt_do) {
 			current_pos = do_loop(stream, current_pos);
@@ -678,6 +651,10 @@ void eval(const struct token* stream, int current_pos) {
 			} else {
 				return_stack_pop();
 			}
+		}
+
+		if (current_token_type == tt_else) {
+			current_pos = return_stack_pop();
 		}
 
 		if (current_token_type == tt_loop) {
