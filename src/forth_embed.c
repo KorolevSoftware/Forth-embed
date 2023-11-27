@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include "iso646.h"
 
+// ------------------------- TOKENIZER FORTH -------------------------
 #define array_size(x) sizeof(x)/sizeof(x[0])
 
 enum token_type {
@@ -217,6 +218,7 @@ struct token* tokenizer(const char* stream) {
 	return tokens;
 }
 
+// ------------------------- VARIABLES OPERATIONS -------------------------
 
 static int stack_data[100];
 static int stack_top = 0;
@@ -327,7 +329,7 @@ void emit_op() {
 }
 
 void cr_op() {
-	printf("/n");
+	printf("\n");
 }
 
 // ------------------------- BOOLEAN OPERATION -------------------------
@@ -409,7 +411,7 @@ void dividing_op() {
 }
 
 
-// ------------------------- tokinizer -------------------------
+// ------------------------- CONTROLL FLOW OPERATIONS -------------------------
 
 
 int if_op(const struct token* stream, int position) {
@@ -531,8 +533,9 @@ void allot_op() {
 	integer_memory_pointer_top += offset;
 }
 
+void eval(const struct token* stream, int current_pos);
 
-int do_loop(const struct token* stream, int position) {
+int do_loop(const struct token* stream, int position) { // TODO rewrite danger with push stack and next loop
 	int start_index = stack_pop();
 	int end_index = stack_pop();
 
@@ -561,10 +564,8 @@ int do_loop(const struct token* stream, int position) {
 	}
 }
 
-void eval(const struct token* stream) {
-	int current_pos = 0;
-
-	for (int current_pos = 0; ; current_pos++) {
+void eval(const struct token* stream, int current_pos) {
+	for (; ; current_pos++) {
 		const struct token current_token = stream[current_pos];
 		enum token_type current_token_type = current_token.type;
 
@@ -620,6 +621,10 @@ void eval(const struct token* stream) {
 			dot_op();
 		}
 
+		if (current_token_type == tt_cr) {
+			cr_op();
+		}
+
 		if (current_token_type == tt_constant) {
 			set_constant(stream, current_pos);
 			current_pos++;
@@ -645,14 +650,6 @@ void eval(const struct token* stream) {
 			current_pos = if_op(stream, current_pos);
 		}
 
-		if (current_token_type == tt_else) {
-			current_pos = skip_else(stream, current_pos);
-		}
-
-		if (current_token_type == tt_semicolon) {
-			current_pos = return_stack_pop();
-		}
-
 		if (current_token_type == tt_setfunction) {
 			current_pos = set_function(stream, current_pos);
 		}
@@ -660,6 +657,10 @@ void eval(const struct token* stream) {
 		if (current_token_type == tt_dotstring) {
 			printf("%s", stream[current_pos+1].data.string);
 			current_pos++;
+		}
+
+		if (current_token_type == tt_else) {
+			current_pos = skip_else(stream, current_pos);
 		}
 
 		if (current_token_type == tt_do) {
@@ -680,6 +681,10 @@ void eval(const struct token* stream) {
 		}
 
 		if (current_token_type == tt_loop) {
+			current_pos = return_stack_pop();
+		}
+
+		if (current_token_type == tt_semicolon) {
 			current_pos = return_stack_pop();
 		}
 
@@ -712,13 +717,13 @@ struct forth_byte_code {
 	struct token* stream;
 };
 
-const struct forth_byte_code* compile(const char* script) {
+const struct forth_byte_code* forth_compile(const char* script) {
 	struct forth_byte_code* byte_code = (struct forth_byte_code*)malloc(sizeof(struct forth_byte_code));
 	byte_code->stream = tokenizer(script);
 	return byte_code;
 }
 
 
-void run(struct forth_byte_code* script) {
-	eval(script->stream);
+void forth_run(const struct forth_byte_code* script) {
+	eval(script->stream, 0);
 }
