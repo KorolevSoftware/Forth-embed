@@ -14,53 +14,58 @@
 // <stack_operators> = <number>| -| +| *| /| dup| drop| swap| over| rot| .| ."| emit| cr| <| >| =| invert| or| and
 // <expression> = : { <stack_operators> } ;	
 
-
 #define array_size(x) sizeof(x)/sizeof(x[0])
 
+#define FOREACH_TOKENS(TOKENS) \
+	TOKENS(tt_dup, "dup") \
+	TOKENS(tt_drop, "drop") \
+	TOKENS(tt_swap, "swap") \
+	TOKENS(tt_over, "over") \
+	TOKENS(tt_rot, "rot") \
+	TOKENS(tt_dot, ".") \
+	TOKENS(tt_dotstring, ".\"") \
+	TOKENS(tt_emit, "emit") \
+	TOKENS(tt_cr, "cr") \
+	\
+	TOKENS(tt_equal, "=") \
+	TOKENS(tt_great, "<") \
+	TOKENS(tt_less, ">") \
+	TOKENS(tt_invert, "invert") \
+	TOKENS(tt_and, "and") \
+	TOKENS(tt_or, "or") \
+	\
+	TOKENS(tt_plus, "+") \
+	TOKENS(tt_minus, "-") \
+	TOKENS(tt_multip, "*") \
+	TOKENS(tt_div, "/") \
+	\
+	TOKENS(tt_if, "if") \
+	TOKENS(tt_else, "else") \
+	TOKENS(tt_then, "then") \
+	TOKENS(tt_do, "do") \
+	TOKENS(tt_loop, "loop") \
+	TOKENS(tt_begin, "begin") \
+	TOKENS(tt_until, "until") \
+	\
+	TOKENS(tt_allot, "allot") \
+	TOKENS(tt_cells, "cells") \
+	TOKENS(tt_constant, "constant") \
+	TOKENS(tt_variable, "variable") \
+	TOKENS(tt_at, "@") \
+	TOKENS(tt_setvalue, "!") \
+	TOKENS(tt_function, ":") \
+	TOKENS(tt_semicolon, ";") \
+
+#define GENERATE_ENUM(ENUM) ENUM,
+
 enum token_type {
-	tt_dup,
-	tt_drop,
-	tt_swap,
-	tt_over,
-	tt_rot,
-	tt_dot,
-	tt_dotstring,
-	tt_emit,
-	tt_cr,
-
-	tt_equal,
-	tt_great,
-	tt_less,
-	tt_invert,
-	tt_and,
-	tt_or,
-
-	tt_plus,
-	tt_minus,
-	tt_multip,
-	tt_div,
-
-	tt_if,
-	tt_else,
-	tt_then,
-	tt_do,
-	tt_loop,
-	tt_begin,
-	tt_until,
-
-	tt_allot,
-	tt_constant,
-	tt_variable,
-	tt_cells,
-	tt_at, //dereferencing @
-	tt_setvalue, // !
-	tt_function, // :
+	FOREACH_TOKENS(GENERATE_ENUM)
+	tt_ident,
 	tt_string,
-	tt_ident, // identificator
-	tt_semicolon, // ;
 	tt_value,
-	tt_endof,
+
 	tt_none,
+	tt_endof,
 };
 
 struct token {
@@ -79,53 +84,19 @@ struct token key_word_by_name(const char* word, const char* token_name, enum tok
 }
 
 #define key_word_func_by(fname) key_word_##fname
-#define make_key_word_func(name, token_name, token_type) struct token key_word_##name(const char* word){ \
+#define make_key_word_func(token_name, token_type) struct token key_word_##token_type(const char* word){ \
 return key_word_by_name(word, token_name, token_type);\
 }\
+
+#define GENERATE_FUNCTIONS(tokenr, token_string) make_key_word_func(token_string, tokenr);
+#define GENERATE_TOKEN_PAIRS(tokenr, token_string) {tokenr, key_word_func_by(tokenr)},
+
+FOREACH_TOKENS(GENERATE_FUNCTIONS);
 
 struct token_type_pair {
 	enum token_type type;
 	struct token(*func_cmp)(const char*);
 };
-
-make_key_word_func(dup, "dup", tt_dup);
-make_key_word_func(drop, "drop", tt_drop);
-make_key_word_func(swap, "swap", tt_swap);
-make_key_word_func(over, "over", tt_over);
-make_key_word_func(rot, "rot", tt_rot);
-make_key_word_func(dot, ".", tt_dot);
-make_key_word_func(dotstr, ".\"", tt_dotstring);
-make_key_word_func(emit, "emit", tt_emit);
-make_key_word_func(cr, "cr", tt_cr);
-
-make_key_word_func(equal, "=", tt_equal);
-make_key_word_func(great, "<", tt_great);
-make_key_word_func(less, ">", tt_less);
-make_key_word_func(invert, "invert", tt_invert);
-make_key_word_func(andsc, "and", tt_and);
-make_key_word_func(orsc , "or", tt_or);
-
-make_key_word_func(plus, "+", tt_plus);
-make_key_word_func(minus, "-", tt_minus);
-make_key_word_func(multip, "*", tt_multip);
-make_key_word_func(divsc, "/", tt_div);
-
-make_key_word_func(ifsc, "if", tt_if);
-make_key_word_func(elsesc, "else", tt_else);
-make_key_word_func(then, "then", tt_then);
-make_key_word_func(dosc, "do", tt_do);
-make_key_word_func(loop, "loop", tt_loop);
-make_key_word_func(begin, "begin", tt_begin);
-make_key_word_func(until, "until", tt_until);
-
-make_key_word_func(allot, "allot", tt_allot);
-make_key_word_func(cells, "cells", tt_cells);
-make_key_word_func(constant, "constant", tt_constant);
-make_key_word_func(variable, "variable", tt_variable);
-make_key_word_func(at, "@", tt_at);
-make_key_word_func(setvalue, "!", tt_setvalue);
-make_key_word_func(setfunction, ":", tt_function);
-make_key_word_func(semicolon, ";", tt_semicolon);
 
 struct token key_word_func_by(identifier) (const char* word) {
 	if (strchr(word, '"') or strchr(word, '\\')) {
@@ -153,46 +124,8 @@ struct token key_word_func_by(integer) (const char* word) {
 
 
 struct token_type_pair key_words[] = {
-	{tt_dup, key_word_func_by(dup)},
-	{tt_drop, key_word_func_by(drop)},
-	{tt_swap, key_word_func_by(swap)},
-	{tt_over, key_word_func_by(over)},
-	{tt_rot, key_word_func_by(rot)},
-	{tt_dot, key_word_func_by(dot)},
-	{tt_dotstring, key_word_func_by(dotstr)},
-	{tt_emit, key_word_func_by(emit)},
-	{tt_cr, key_word_func_by(cr)},
-
-	{tt_equal, key_word_func_by(equal)},
-	{tt_great, key_word_func_by(great)},
-	{tt_less, key_word_func_by(less)},
-	{tt_invert, key_word_func_by(invert)},
-	{tt_and, key_word_func_by(andsc)},
-	{tt_or, key_word_func_by(orsc)},
-
-	{tt_plus, key_word_func_by(plus)},
-	{tt_minus, key_word_func_by(minus)},
-	{tt_multip, key_word_func_by(multip)},
-	{tt_div, key_word_func_by(divsc)},
-
-	{tt_if, key_word_func_by(ifsc)},
-	{tt_else, key_word_func_by(elsesc)},
-	{tt_then, key_word_func_by(then)},
-	{tt_do, key_word_func_by(dosc)},
-	{tt_loop, key_word_func_by(loop)},
-	{tt_begin, key_word_func_by(begin)},
-	{tt_until, key_word_func_by(until)},
-
-	{tt_allot, key_word_func_by(allot)},
-	{tt_cells, key_word_func_by(cells)},
-	{tt_constant, key_word_func_by(constant)},
-	{tt_variable, key_word_func_by(variable)},
-	{tt_at, key_word_func_by(at)},
-	{tt_setvalue, key_word_func_by(setvalue)},
-	{tt_function, key_word_func_by(setfunction)},
-	{tt_semicolon, key_word_func_by(semicolon)},
+	FOREACH_TOKENS(GENERATE_TOKEN_PAIRS)
 	
-
 	/// Must be last
 	{tt_value, key_word_func_by(integer)},
 	{tt_string, key_word_func_by(string)},
@@ -415,11 +348,12 @@ int find_controll_flow_token(const struct token* stream, int position, const enu
 	int temp_position = position + 1;
 	int if_stack = 0;
 	while (true) {
-		if (stream[temp_position].type == incriment) {
+		enum token_type type = stream[temp_position].type;
+		if (type == incriment) {
 			if_stack++;
 		}
 
-		if (stream[temp_position].type == find) {
+		if (type == find) {
 			if (if_stack == 0) {
 				return temp_position;
 			} else {
@@ -427,11 +361,7 @@ int find_controll_flow_token(const struct token* stream, int position, const enu
 			}
 		}
 
-		if (stream[temp_position].type == tt_endof) {
-			return -1;
-		}
-
-		if (stream[temp_position].type == tt_semicolon) {
+		if (type == tt_endof or type == tt_semicolon) {
 			return -1;
 		}
 
