@@ -7,6 +7,14 @@
 #include "iso646.h"
 
 // ------------------------- TOKENIZER FORTH -------------------------
+
+//EBNF grammar :
+// <digit> = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+// <number> = { <digit> }
+// <stack_operators> = <number>| -| +| *| /| dup| drop| swap| over| rot| .| ."| emit| cr| <| >| =| invert| or| and
+// <expression> = : { <stack_operators> } ;	
+
+
 #define array_size(x) sizeof(x)/sizeof(x[0])
 
 enum token_type {
@@ -43,9 +51,10 @@ enum token_type {
 	tt_allot,
 	tt_constant,
 	tt_variable,
+	tt_cells,
 	tt_at, //dereferencing @
 	tt_setvalue, // !
-	tt_setfunction, // :
+	tt_function, // :
 	tt_string,
 	tt_ident, // identificator
 	tt_semicolon, // ;
@@ -73,8 +82,6 @@ struct token key_word_by_name(const char* word, const char* token_name, enum tok
 #define make_key_word_func(name, token_name, token_type) struct token key_word_##name(const char* word){ \
 return key_word_by_name(word, token_name, token_type);\
 }\
-
-
 
 struct token_type_pair {
 	enum token_type type;
@@ -112,11 +119,12 @@ make_key_word_func(begin, "begin", tt_begin);
 make_key_word_func(until, "until", tt_until);
 
 make_key_word_func(allot, "allot", tt_allot);
+make_key_word_func(cells, "cells", tt_cells);
 make_key_word_func(constant, "constant", tt_constant);
 make_key_word_func(variable, "variable", tt_variable);
 make_key_word_func(at, "@", tt_at);
 make_key_word_func(setvalue, "!", tt_setvalue);
-make_key_word_func(setfunction, ":", tt_setfunction);
+make_key_word_func(setfunction, ":", tt_function);
 make_key_word_func(semicolon, ";", tt_semicolon);
 
 struct token key_word_func_by(identifier) (const char* word) {
@@ -176,11 +184,12 @@ struct token_type_pair key_words[] = {
 	{tt_until, key_word_func_by(until)},
 
 	{tt_allot, key_word_func_by(allot)},
+	{tt_cells, key_word_func_by(cells)},
 	{tt_constant, key_word_func_by(constant)},
 	{tt_variable, key_word_func_by(variable)},
 	{tt_at, key_word_func_by(at)},
 	{tt_setvalue, key_word_func_by(setvalue)},
-	{tt_setfunction, key_word_func_by(setfunction)},
+	{tt_function, key_word_func_by(setfunction)},
 	{tt_semicolon, key_word_func_by(semicolon)},
 	
 
@@ -249,40 +258,29 @@ int return_stack_pop() {
 	return return_stack[return_stack_top];
 }
 
-struct function {
-	const char* name;
-	bool is_native;
-	union {
-		int position;
-		void(*func_native)(void);
-	} body;
+enum named_type {
+	nt_constant,
+	nt_variable,
+	nt_function,
+	nt_function_native
 };
 
-
-static struct function function_table[10];
-static int function_table_count = 0;
-
-struct constant {
+struct named_any {
+	enum named_type type;
 	const char* name;
-	int value;
+	int data; // pointer from variable, jump position from function, value from constant
 };
 
-static struct constant constant_table[10];
-static int constant_table_count = 0;
+static struct named_any dictionary[100];
+static int dictionary_count = 0;
 
-
-struct variable {
-	const char* name;
-	int pointer;
-};
-
-
-static struct variable variable_table[10];
-static int variable_table_count = 0;
 static int integer_memory[1000];
 static int integer_memory_pointer_top = 0;
 
 // ------------------------- STACK OPERATION -------------------------
+
+#define ftrue -1 // forth true
+#define ffalse 0 // forth false
 
 void dup_op() {
 	int value = stack_pop();
@@ -337,7 +335,7 @@ void equal_op() {
 	int value1 = stack_pop();
 	int value2 = stack_pop();
 
-	int result =  value2 == value1 ? -1 : 0;
+	int result = value2 == value1 ? ftrue : ffalse;
 	stack_push(result);
 }
 
@@ -345,7 +343,7 @@ void great_op() {
 	int value1 = stack_pop();
 	int value2 = stack_pop();
 
-	int result = value2 > value1 ? -1 : 0;
+	int result = value2 > value1 ? ftrue : ffalse;
 	stack_push(result);
 }
 
@@ -353,7 +351,7 @@ void less_op() {
 	int value1 = stack_pop();
 	int value2 = stack_pop();
 
-	int result = value2 < value1 ? -1 : 0;
+	int result = value2 < value1 ? ftrue : ffalse;
 	stack_push(result);
 }
 
@@ -366,10 +364,10 @@ void and_op() {
 	int value1 = stack_pop();
 	int value2 = stack_pop();
 
-	if (value1 == -1 && value2 == -1) {
-		stack_push(-1);
+	if (value1 == ftrue && value2 == ftrue) {
+		stack_push(ftrue);
 	} else {
-		stack_push(0);
+		stack_push(ffalse);
 	}
 }
 
@@ -377,10 +375,10 @@ void or_op() {
 	int value1 = stack_pop();
 	int value2 = stack_pop();
 
-	if (value1 == -1 || value2 == -1) {
-		stack_push(-1);
+	if (value1 == ftrue || value2 == ftrue) {
+		stack_push(ftrue);
 	} else {
-		stack_push(0);
+		stack_push(false);
 	}
 }
 
@@ -448,7 +446,7 @@ int if_op(const struct token* stream, int position) {
 	int find_else = find_controll_flow_token(stream, position, tt_if, tt_else);
 	int find_then = find_controll_flow_token(stream, position, tt_if, tt_then);
 
-	if (cmp == -1) {
+	if (cmp == ftrue) {
 		return_stack_push(find_then);
 		return position;
 	}
@@ -460,63 +458,29 @@ int if_op(const struct token* stream, int position) {
 	}
 }
 
-int skip_function_body(const struct token* stream, int body_start_position) { //search ; (tt_semicolon) and return next position
-	for (; stream[body_start_position].type != tt_semicolon; body_start_position++);
-	return body_start_position; // skip tt_semicolon token
-}
-
-int set_function(const struct token* stream, int position) {
+int dictionary_add(const struct token* stream, int position, enum named_type type, int data) {
 	const struct token name_token = stream[position + 1];
-	function_table[function_table_count] = (struct function){ .is_native = 0, .name = name_token.data.name, .body.position = position + 1 };
-	function_table_count++;
-	return skip_function_body(stream, position);
-}
-
-int cull_function(const char* name) {
-	for (int i = 0; i < function_table_count; i++) {
-		struct function current = function_table[i];
-		if (strcmp(current.name, name) == 0) {
-			return current.body.position;
-		}
+	dictionary[dictionary_count] = (struct named_any){ .name = name_token.data.name, .data = data, .type = type };
+	dictionary_count++;
+	if (type == nt_function) {
+		return find_controll_flow_token(stream, position, tt_none, tt_semicolon); // skip function body
+	} else {
+		return position + 1;
 	}
-	return -1;
 }
 
-void set_constant(const struct token* stream, int position) {
-	const struct token name_token = stream[position + 1];
-	constant_table[constant_table_count] = (struct constant){ .name = name_token.data.name, .value = stack_pop() };
-	constant_table_count++;
-}
-
-bool get_constant(const char* name) {
-	for (int i = 0; i < constant_table_count; i++) {
-		const struct constant current = constant_table[i];
+bool dictionary_get_push(const char* name) {
+	for (int i = 0; i < dictionary_count; i++) {
+		const struct named_any current = dictionary[i];
 		if (strcmp(current.name, name) == 0) {
-			stack_push(current.value);
+			stack_push(current.data); 
+			stack_push(current.type);
 			return true;
 		}
 	}
 	return false;
 }
 
-
-void set_variable(const struct token* stream, int position) {
-	const struct token name_token = stream[position + 1];
-	variable_table[variable_table_count] = (struct variable){ .name = name_token.data.name, .pointer = integer_memory_pointer_top };
-	variable_table_count++;
-	integer_memory_pointer_top++;
-}
-
-bool get_variable(const char* name) {
-	for (int i = 0; i < variable_table_count; i++) {
-		const struct variable current = variable_table[i];
-		if (strcmp(current.name, name) == 0) {
-			stack_push(current.pointer);
-			return true;
-		}
-	}
-	return false;
-}
 
 void allot_op() {
 	int offset = stack_pop();
@@ -600,24 +564,17 @@ void eval(const struct token* stream, int current_pos) {
 			cr_op();
 		}
 
-		if (current_token_type == tt_constant) {
-			set_constant(stream, current_pos);
-			current_pos++;
-		}
-
 		if (current_token_type == tt_ident) {
-			int jump_to_position = cull_function(current_token.data.name);
-
-			if (jump_to_position != -1) { // cull function
-				return_stack_push(current_pos);
-				current_pos = jump_to_position;
+			if (not dictionary_get_push(current_token.data.name)) { // push data and type to stack
+				printf("Error name constant/variable/function nor found, what is: %s ?", current_token.data.name);
+				return;
 			}
-			
-			if (jump_to_position == -1) {
-				bool is_set = get_constant(current_token.data.name);
-				if (not is_set) {
-					get_variable(current_token.data.name);
-				}
+
+			// is type function jump to func body
+			int ident_type = stack_pop();
+			if (ident_type == (int)nt_function) {
+				return_stack_push(current_pos);
+				current_pos = stack_pop();
 			}
 		}
 
@@ -625,16 +582,22 @@ void eval(const struct token* stream, int current_pos) {
 			current_pos = if_op(stream, current_pos);
 		}
 
-		if (current_token_type == tt_setfunction) {
-			current_pos = set_function(stream, current_pos);
+		if (current_token_type == tt_variable) {
+			current_pos = dictionary_add(stream, current_pos, nt_variable, integer_memory_pointer_top);
+		}
+
+		if (current_token_type == tt_constant) {
+			current_pos = dictionary_add(stream, current_pos, nt_constant, stack_pop());
+		}
+
+		if (current_token_type == tt_function) {
+			current_pos = dictionary_add(stream, current_pos, nt_function, current_pos + 1);// +1 skip token name
 		}
 
 		if (current_token_type == tt_dotstring) {
 			printf("%s", stream[current_pos+1].data.string);
 			current_pos++;
 		}
-
-	
 
 		if (current_token_type == tt_do) {
 			current_pos = do_loop(stream, current_pos);
@@ -654,20 +617,15 @@ void eval(const struct token* stream, int current_pos) {
 		}
 
 		if (current_token_type == tt_else) {
-			current_pos = return_stack_pop();
+			current_pos = return_stack_pop(); // jump to then token
 		}
 
 		if (current_token_type == tt_loop) {
-			current_pos = return_stack_pop();
+			current_pos = return_stack_pop(); // jump to do token
 		}
 
-		if (current_token_type == tt_semicolon) {
+		if (current_token_type == tt_semicolon) { // jump to call function
 			current_pos = return_stack_pop();
-		}
-
-		if (current_token_type == tt_variable) {
-			set_variable(stream, current_pos);
-			current_pos++;
 		}
 
 		if (current_token_type == tt_setvalue) {
