@@ -86,11 +86,11 @@ struct token key_word_by_name(const char* word, const char* token_name, enum tok
 
 #define key_word_func_by(fname) key_word_##fname
 #define make_key_word_func(token_name, token_type) struct token key_word_##token_type(const char* word){ \
-return key_word_by_name(word, token_name, token_type);\
+	return key_word_by_name(word, token_name, token_type);\
 }\
 
 #define GENERATE_FUNCTIONS(tokenr, token_string) make_key_word_func(token_string, tokenr);
-#define GENERATE_TOKEN_PAIRS(tokenr, token_string) {tokenr, key_word_func_by(tokenr)},
+#define GENERATE_TOKEN_PAIRS(tokenr, token_string) { tokenr, key_word_func_by(tokenr) },
 
 FOREACH_TOKENS(GENERATE_FUNCTIONS);
 
@@ -254,18 +254,20 @@ void rot_op() {
 	stack_push(value1);
 	stack_push(value3);
 }
-
-void dot_op() {
+// print value 
+void dot_op() { 
 	int value = stack_pop();
 	printf("%d ", value); // dot operator make space
 }
 
-void emit_op() {
+// print char
+void emit_op() { 
 	char value = (char)stack_pop();
 	printf("%c", value);
 }
 
-void cr_op() {
+// print new line
+void cr_op() { 
 	printf("\n");
 }
 
@@ -323,7 +325,7 @@ void or_op() {
 
 // ------------------------- MATH OPERATION -------------------------
 
-void plus_op () {
+void plus_op() {
 	int value1 = stack_pop();
 	int value2 = stack_pop();
 	stack_push(value1 + value2);
@@ -377,7 +379,7 @@ int find_controll_flow_token(const struct token* stream, int position, enum toke
 
 int if_op(const struct token* stream, int position) {
 	int cmp = stack_pop();
-	
+
 	int find_else = find_controll_flow_token(stream, position, tt_if, tt_else);
 	int find_then = find_controll_flow_token(stream, position, tt_if, tt_then);
 
@@ -408,14 +410,13 @@ bool dictionary_get_push(const char* name) {
 	for (int i = 0; i < dictionary_count; i++) {
 		const struct named_any current = dictionary[i];
 		if (strcmp(current.name, name) == 0) {
-			stack_push(current.data); 
+			stack_push(current.data);
 			stack_push(current.type);
 			return true;
 		}
 	}
 	return false;
 }
-
 
 void allot_op() {
 	int offset = stack_pop();
@@ -436,7 +437,7 @@ int do_loop_start(const struct token* stream, int position) { // TODO rewrite da
 	}
 }
 
-int do_loop_end(const struct token* stream, int position) { 
+int do_loop_end(const struct token* stream, int position) {
 	int start_index = return_stack_pop();
 	int end_index = return_stack_pop();
 	int do_position = return_stack_pop();
@@ -459,149 +460,200 @@ void loop_index_push() {
 	return_stack_push(i);
 }
 
+void set_value() {
+	int pointer = stack_pop();
+	integer_memory[pointer] = stack_pop();
+}
+
+void get_value_of_variable() { // at @
+	int pointer = stack_pop();
+	stack_push(integer_memory[pointer]);
+}
+
+int until_op() { // return jump position
+	int value = stack_pop();
+	if (value == ftrue) {
+		return return_stack_pop();
+	} else {
+		return_stack_pop();
+	}
+}
+
+int ident_op(const char* name, int position) {
+	if (not dictionary_get_push(name)) { // push data and type to stack
+		printf("Error name constant/variable/function nor found, what is: %s ?", name);
+		return;
+	}
+
+	// is type function jump to func body
+	int ident_type = stack_pop();
+	if (ident_type == (int)nt_function) {
+		return_stack_push(position);
+		return stack_pop();
+	}
+}
+
+int do_string_op(const struct token* stream, int position) { // print string
+	printf("%s", stream[position + 1].data.string);
+	position++; // skip string token
+	return position;
+}
+
 void eval(const struct token* stream) {
 	for (int current_pos = 0; ; current_pos++) {
 		const struct token current_token = stream[current_pos];
 		enum token_type current_token_type = current_token.type;
 
-		if (current_token_type == tt_value) {
-			stack_push(current_token.data.integer);
-		}
-
-		if (current_token_type == tt_equal) {
-			equal_op();
-		}
-
-		if (current_token_type == tt_less) {
-			less_op();
-		}
-
-		if (current_token_type == tt_great) {
-			great_op();
-		}
-
-		if (current_token_type == tt_and) {
-			and_op();
-		}
-
-		if (current_token_type == tt_or) {
-			or_op();
-		}
-
-		if (current_token_type == tt_invert) {
-			invert_op();
-		}
-
-		if (current_token_type == tt_dup) {
+		switch (current_token_type) {
+		case tt_dup:
 			dup_op();
-		}
+			break;
 
-		if (current_token_type == tt_plus) {
-			plus_op();
-		}
+		case tt_drop:
+			drop_op();
+			break;
 
-		if (current_token_type == tt_minus) {
-			minus_op();
-		}
+		case tt_swap:
+			swap_op();
+			break;
 
-		if (current_token_type == tt_div) {
-			dividing_op();
-		}
+		case tt_over:
+			over_op();
+			break;
 
-		if (current_token_type == tt_multip) {
-			multiplication_op();
-		}
+		case tt_rot:
+			rot_op();
+			break;
 
-		if (current_token_type == tt_dot) {
+		case tt_dot:
 			dot_op();
-		}
-		if (current_token_type == tt_index) {
-			loop_index_push();
-		}
+			break;
 
-		if (current_token_type == tt_cr) {
+		case tt_emit:
+			break;
+
+		case tt_cr:
 			cr_op();
-		}
+			break;
 
-		if (current_token_type == tt_ident) {
-			if (not dictionary_get_push(current_token.data.name)) { // push data and type to stack
-				printf("Error name constant/variable/function nor found, what is: %s ?", current_token.data.name);
-				return;
-			}
+		case tt_equal:
+			equal_op();
+			break;
 
-			// is type function jump to func body
-			int ident_type = stack_pop();
-			if (ident_type == (int)nt_function) {
-				return_stack_push(current_pos);
-				current_pos = stack_pop();
-			}
-		}
+		case tt_great:
+			great_op();
+			break;
 
-		if (current_token_type == tt_if) {
-			current_pos = if_op(stream, current_pos);
-		}
+		case tt_less:
+			less_op();
+			break;
 
-		if (current_token_type == tt_variable) {
-			current_pos = dictionary_add(stream, current_pos, nt_variable, integer_memory_pointer_top);
-		}
+		case tt_invert:
+			invert_op();
+			break;
 
-		if (current_token_type == tt_constant) {
-			current_pos = dictionary_add(stream, current_pos, nt_constant, stack_pop());
-		}
+		case tt_and:
+			and_op();
+			break;
 
-		if (current_token_type == tt_function) {
-			current_pos = dictionary_add(stream, current_pos, nt_function, current_pos + 1);// +1 skip token name
-		}
+		case tt_or:
+			or_op();
+			break;
 
-		if (current_token_type == tt_dotstring) {
-			printf("%s", stream[current_pos+1].data.string);
-			current_pos++;
-		}
+		case tt_plus:
+			plus_op();
+			break;
 
-		if (current_token_type == tt_do) {
-			current_pos = do_loop_start(stream, current_pos);
-		}
+		case tt_minus:
+			minus_op();
+			break;
 
-		if (current_token_type == tt_begin) {
-			return_stack_push(current_pos -1);
-		}
+		case tt_multip:
+			multiplication_op();
+			break;
 
-		if (current_token_type == tt_until) {
-			int value = stack_pop();
-			if (value == -1) {
-				current_pos = return_stack_pop();
-			} else {
-				return_stack_pop();
-			}
-		}
+		case tt_div:
+			dividing_op();
+			break;
 
-		if (current_token_type == tt_else) {
-			current_pos = return_stack_pop(); // jump to then token
-		}
+		case tt_at:
+			get_value_of_variable();
+			break;
 
-		if (current_token_type == tt_loop) {
-			current_pos = do_loop_end(stream, current_pos); // jump to do token
-		}
+		case tt_setvalue:
+			set_value();
+			break;
 
-		if (current_token_type == tt_semicolon) { // jump to call function
-			current_pos = return_stack_pop();
-		}
+		case tt_index:
+			loop_index_push();
+			break;
 
-		if (current_token_type == tt_setvalue) {
-			int pointer = stack_pop();
-			integer_memory[pointer] = stack_pop();
-		}
-
-		if (current_token_type == tt_at) {
-			int pointer = stack_pop();
-			stack_push(integer_memory[pointer]);
-		}
-
-		if (current_token_type == tt_allot) {
+		case tt_allot:
 			allot_op();
-		}
+			break;
 
-		if (current_token_type == tt_endof) {
+		case tt_begin:
+			return_stack_push(current_pos - 1);
+			break;
+
+		case tt_value:
+			stack_push(current_token.data.integer);
+			break;
+
+		case tt_dotstring:
+			current_pos = do_string_op(stream, current_pos);
+			break;
+
+		case tt_if:
+			current_pos = if_op(stream, current_pos);
+			break;
+
+		case tt_do:
+			current_pos = do_loop_start(stream, current_pos);
+			break;
+
+		case tt_loop:
+			current_pos = do_loop_end(stream, current_pos); // jump to do token
+			break;
+
+		case tt_until:
+			current_pos = until_op();
+			break;
+
+		case tt_constant:
+			current_pos = dictionary_add(stream, current_pos, nt_constant, stack_pop());
+			break;
+
+		case tt_variable:
+			current_pos = dictionary_add(stream, current_pos, nt_variable, integer_memory_pointer_top);
+			integer_memory_pointer_top++;
+			break;
+
+		case tt_function:
+			current_pos = dictionary_add(stream, current_pos, nt_function, current_pos + 1);// +1 skip token name
+			break;
+		case tt_ident:
+			current_pos = ident_op(current_token.data.name, current_pos);
+			break;
+
+		case tt_else: // jump to then
+		case tt_semicolon: // jump to call function position 
+			current_pos = return_stack_pop();
+			break;
+
+			// not used
+		case tt_then:
+		case tt_cells:
+		case tt_string:
+		case tt_none:
+			break;
+
+		case tt_endof: // end script return 
+			return;
+			break;
+
+		default:
+			printf("Undefine operator from token: %s", current_token.data.name);
 			break;
 		}
 	}
