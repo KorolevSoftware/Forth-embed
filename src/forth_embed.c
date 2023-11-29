@@ -43,6 +43,7 @@
 	TOKENS(tt_else, "else") \
 	TOKENS(tt_then, "then") \
 	TOKENS(tt_do, "do") \
+	TOKENS(tt_index, "i") \
 	TOKENS(tt_loop, "loop") \
 	TOKENS(tt_begin, "begin") \
 	TOKENS(tt_until, "until") \
@@ -110,7 +111,9 @@ struct token key_word_func_by(string) (const char* word) {
 	if (word[word_lenght - 1] != '"')
 		return (struct token) { .type = tt_none };
 
-	return (struct token) { .type = tt_string, .data.string = strdup(word) };
+	char* word_dup = strdup(word);
+	word_dup[word_lenght - 1] = ""; // set zero char to " position.
+	return (struct token) { .type = tt_string, .data.string = word_dup };
 }
 
 struct token key_word_func_by(integer) (const char* word) {
@@ -135,7 +138,7 @@ struct token_type_pair key_words[] = {
 struct token* tokenizer(const char* stream) {
 	char* stream_copy = strdup(stream);
 
-	const char* delimiter = " ,\n";
+	const char* delimiter = " \n\t";// space, new line, tab
 	char* word = strtok(stream_copy, delimiter);
 
 	struct token* tokens = calloc(100, sizeof(struct token));
@@ -157,6 +160,9 @@ struct token* tokenizer(const char* stream) {
 		word = strtok(NULL, " ");
 	}
 	tokens[token_count] = (struct token){ .type = tt_endof };
+
+	free(stream_copy);
+
 	return tokens;
 }
 
@@ -251,7 +257,7 @@ void rot_op() {
 
 void dot_op() {
 	int value = stack_pop();
-	printf("%d", value);
+	printf("%d ", value); // dot operator make space
 }
 
 void emit_op() {
@@ -341,10 +347,9 @@ void dividing_op() {
 	stack_push(value2 / value1);
 }
 
-
 // ------------------------- CONTROLL FLOW OPERATIONS -------------------------
 
-int find_controll_flow_token(const struct token* stream, int position, const enum token_type incriment, const enum token_type find) {
+int find_controll_flow_token(const struct token* stream, int position, enum token_type incriment, enum token_type find) {
 	int temp_position = position + 1;
 	int if_stack = 0;
 	while (true) {
@@ -417,24 +422,45 @@ void allot_op() {
 	integer_memory_pointer_top += offset;
 }
 
-void eval(const struct token* stream, int current_pos);
-
-int do_loop(const struct token* stream, int position) { // TODO rewrite danger with push stack and next loop
+int do_loop_start(const struct token* stream, int position) { // TODO rewrite danger with push stack and next loop
 	int start_index = stack_pop();
 	int end_index = stack_pop();
 
 	if (start_index < end_index) {
-		return_stack_push(position -1);
-		stack_push(end_index);
-		stack_push(start_index + 1);
+		return_stack_push(position);
+		return_stack_push(end_index);
+		return_stack_push(start_index);
 		return position;
 	} else {
 		return find_controll_flow_token(stream, position, tt_do, tt_loop);
 	}
 }
 
-void eval(const struct token* stream, int current_pos) {
-	for (; ; current_pos++) {
+int do_loop_end(const struct token* stream, int position) { 
+	int start_index = return_stack_pop();
+	int end_index = return_stack_pop();
+	int do_position = return_stack_pop();
+
+	start_index++;
+
+	if (start_index < end_index) {
+		return_stack_push(do_position);
+		return_stack_push(end_index);
+		return_stack_push(start_index);
+		return do_position;
+	} else {
+		return position;
+	}
+}
+
+void loop_index_push() {
+	int i = return_stack_pop();
+	stack_push(i);
+	return_stack_push(i);
+}
+
+void eval(const struct token* stream) {
+	for (int current_pos = 0; ; current_pos++) {
 		const struct token current_token = stream[current_pos];
 		enum token_type current_token_type = current_token.type;
 
@@ -489,6 +515,9 @@ void eval(const struct token* stream, int current_pos) {
 		if (current_token_type == tt_dot) {
 			dot_op();
 		}
+		if (current_token_type == tt_index) {
+			loop_index_push();
+		}
 
 		if (current_token_type == tt_cr) {
 			cr_op();
@@ -530,7 +559,7 @@ void eval(const struct token* stream, int current_pos) {
 		}
 
 		if (current_token_type == tt_do) {
-			current_pos = do_loop(stream, current_pos);
+			current_pos = do_loop_start(stream, current_pos);
 		}
 
 		if (current_token_type == tt_begin) {
@@ -551,7 +580,7 @@ void eval(const struct token* stream, int current_pos) {
 		}
 
 		if (current_token_type == tt_loop) {
-			current_pos = return_stack_pop(); // jump to do token
+			current_pos = do_loop_end(stream, current_pos); // jump to do token
 		}
 
 		if (current_token_type == tt_semicolon) { // jump to call function
@@ -590,5 +619,5 @@ const struct forth_byte_code* forth_compile(const char* script) {
 
 
 void forth_run(const struct forth_byte_code* script) {
-	eval(script->stream, 0);
+	eval(script->stream);
 }
