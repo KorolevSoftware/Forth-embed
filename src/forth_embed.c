@@ -231,7 +231,7 @@ struct forth_state {
 	int native_function_count;
 };
 
-struct forth_state* make_default_stack() {
+struct forth_state* make_default_state() {
 	struct forth_state* stack = malloc(sizeof(struct forth_state));
 	if (stack == NULL) {
 		return NULL;
@@ -253,7 +253,7 @@ struct forth_state* make_default_stack() {
 	return stack;
 }
 
-void release_stack(struct forth_state* fs) {
+void release_state(struct forth_state* fs) {
 	free(fs->data_stack);
 	free(fs->integer_memory);
 	free(fs->return_stack);
@@ -746,7 +746,7 @@ static void eval(struct forth_state* fs, const struct token* stream) {
 
 		default:
 			printf("Undefine operator from token: %s", current_token.data.name);
-			break;
+			return;
 		}
 	}
 }
