@@ -135,13 +135,27 @@ struct token_type_pair key_words[] = {
 	{tt_ident, key_word_func_by(identifier)},
 };
 
-struct token* tokenizer(const char* stream) {
+int tokens_count(const char* stream) {
 	char* stream_copy = strdup(stream);
 
 	const char* delimiter = " \n\t";// space, new line, tab
 	char* word = strtok(stream_copy, delimiter);
+	int token_count = 0;
+	while (word != NULL) {
+		token_count++;
+		word = strtok(NULL, " ");
+	}
+	free(stream_copy);
+	return token_count;
+}
 
-	struct token* tokens = calloc(100, sizeof(struct token));
+struct token* tokenizer(const char* stream) {
+	char* stream_copy = strdup(stream);
+	struct token* tokens = calloc(tokens_count(stream) + 1, sizeof(struct token));
+	const char* delimiter = " \n\t";// space, new line, tab
+	char* word = strtok(stream_copy, delimiter);
+
+	
 	int token_count = 0;
 
 	while (word != NULL) {
