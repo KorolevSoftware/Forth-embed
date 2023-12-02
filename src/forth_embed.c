@@ -66,7 +66,6 @@ enum token_type {
 	tt_value,
 
 	tt_none,
-	tt_endof,
 };
 
 struct token {
@@ -178,7 +177,7 @@ static struct forth_byte_code* tokenizer(const char* stream) {
 	int token_count = 0;
 	tokens_iterator(stream, tokens_count, &token_count);
 
-	struct token* tokens = calloc(token_count + 1, sizeof(struct token)); // +1 from add tt_endof token
+	struct token* tokens = calloc(token_count, sizeof(struct token));
 
 	struct forth_byte_code* lexem_container = (struct forth_byte_code*)malloc(sizeof(struct forth_byte_code));
 	if (lexem_container == NULL or tokens == NULL) {
@@ -188,8 +187,6 @@ static struct forth_byte_code* tokenizer(const char* stream) {
 	lexem_container->stream = tokens;
 	lexem_container->count = 0;
 	tokens_iterator(stream, tokens_to_lexem, lexem_container);
-
-	tokens[token_count] = (struct token) { .type = tt_endof };
 
 	return lexem_container;
 }
@@ -266,16 +263,12 @@ void release_state(struct forth_state* fs) {
 }
 
 void release_forth_byte_code(struct forth_byte_code* fbc) {
-	for (int index = 0; ; index++) {
+	for (int index = 0; index < fbc->count; index++) {
 		const struct token current_token = fbc->stream[index];
 		enum token_type current_token_type = current_token.type;
 
 		if (current_token_type == tt_string or current_token_type == tt_ident) {
 			free(current_token.data.name);
-		}
-
-		if(current_token_type == tt_endof) {
-			break;
 		}
 	}
 	free(fbc->stream);
@@ -455,7 +448,7 @@ static int find_controll_flow_token(const struct token* stream, int position, en
 			}
 		}
 
-		if (type == tt_endof or type == tt_semicolon) {
+		if (type == tt_semicolon) {
 			return -1;
 		}
 
@@ -596,8 +589,8 @@ static int do_string_op(struct forth_state* fs, const struct token* stream, int 
 	return position;
 }
 
-static void eval(struct forth_state* fs, const struct token* stream) {
-	for (int current_pos = 0; ; current_pos++) {
+static void eval(struct forth_state* fs, const struct token* stream, int start_position, int end_poition) {
+	for (int current_pos = start_position; current_pos < end_poition; current_pos++) {
 		const struct token current_token = stream[current_pos];
 		enum token_type current_token_type = current_token.type;
 
@@ -745,10 +738,6 @@ static void eval(struct forth_state* fs, const struct token* stream) {
 		case tt_none:
 			break;
 
-		case tt_endof: // end script return 
-			return;
-			break;
-
 		default:
 			printf("Undefine operator from token: %s", current_token.data.name);
 			return;
@@ -762,8 +751,19 @@ const struct forth_byte_code* forth_compile(const char* script) {
 	return tokenizer(script);
 }
 
+bool forth_run_function(struct forth_state* fs, const struct forth_byte_code* script, const char* func_name) {
+	if (not dictionary_get_push(fs, func_name)) {
+		return false;
+	}
+	drop_op(fs); // skip any type (type nt_function)
+	int func_start_position = stack_pop(fs);
+	int func_end_position = find_controll_flow_token(script->stream, func_start_position, tt_none, tt_semicolon); // skip function body
+	eval(fs, script->stream, func_start_position, func_end_position);
+	return true;
+}
+
 void forth_run(struct forth_state* fs, const struct forth_byte_code* script) {
-	eval(fs, script->stream);
+	eval(fs, script->stream, 0, script->count);
 }
 
 void forth_data_stack_push(struct forth_state* fs, int value) {
