@@ -78,14 +78,14 @@ struct token {
 	} data;
 };
 
-struct token key_word_by_name(const char* word, const char* token_name, enum token_type type) {
+static struct token key_word_by_name(const char* word, const char* token_name, enum token_type type) {
 	if (strcmp(token_name, word) == 0)
 		return (struct token) { .type = type };
 	return (struct token) { .type = tt_none };
 }
 
 #define key_word_func_by(fname) key_word_##fname
-#define make_key_word_func(token_name, token_type) struct token key_word_##token_type(const char* word){ \
+#define make_key_word_func(token_name, token_type) static struct token key_word_##token_type(const char* word){ \
 	return key_word_by_name(word, token_name, token_type);\
 }\
 
@@ -106,17 +106,17 @@ struct token key_word_func_by(identifier) (const char* word) {
 	return (struct token) { .type = tt_ident, .data.name = strdup(word) };
 }
 
-struct token key_word_func_by(string) (const char* word) {
+static struct token key_word_func_by(string) (const char* word) {
 	int word_lenght = strlen(word);
 	if (word[word_lenght - 1] != '"')
 		return (struct token) { .type = tt_none };
 
 	char* word_dup = strdup(word);
-	word_dup[word_lenght - 1] = ""; // set zero char to " position.
+	word_dup[word_lenght-1] = '\0'; // set zero char to " position.
 	return (struct token) { .type = tt_string, .data.string = word_dup };
 }
 
-struct token key_word_func_by(integer) (const char* word) {
+static struct token key_word_func_by(integer) (const char* word) {
 	char* enp_pos;
 	int value = strtol(word, &enp_pos, 10);
 	uintptr_t integer_lenght = enp_pos - word;
@@ -135,81 +135,66 @@ struct token_type_pair key_words[] = {
 	{tt_ident, key_word_func_by(identifier)},
 };
 
-int tokens_count(const char* stream) {
-	char* stream_copy = strdup(stream);
+struct forth_byte_code {
+	struct token* stream;
+	int count;
+};
 
+typedef void(*token_iterator)(char* word, void* arg);
+
+static void tokens_iterator(const char* stream, token_iterator func, void* arg) {
+	char* stream_copy = strdup(stream);
 	const char* delimiter = " \n\t";// space, new line, tab
 	char* word = strtok(stream_copy, delimiter);
-	int token_count = 0;
+	
 	while (word != NULL) {
-		token_count++;
+		func(word, arg);
 		word = strtok(NULL, " ");
 	}
 	free(stream_copy);
-	return token_count;
 }
 
-struct token* tokenizer(const char* stream) {
-	char* stream_copy = strdup(stream);
-	struct token* tokens = calloc(tokens_count(stream) + 1, sizeof(struct token));
-	const char* delimiter = " \n\t";// space, new line, tab
-	char* word = strtok(stream_copy, delimiter);
+static void tokens_count(char* word, void* arg) {
+	int* token_count = (int*)arg;
+	(*token_count)++;
+}
 
-	
-	int token_count = 0;
+static void tokens_to_lexem(char* word, void* arg) {
+	struct forth_byte_code* lexem_container = (struct forth_byte_code*)arg;
+	for (int key = 0; key < array_size(key_words); key++) {
+		const struct token_type_pair key_word = key_words[key];
+		struct token new_token = key_word.func_cmp(word);
 
-	while (word != NULL) {
+		if (new_token.type == tt_none)
+			continue;
 
-		for (int key = 0; key < array_size(key_words); key++) {
-			const struct token_type_pair key_word = key_words[key];
-			struct token new_token = key_word.func_cmp(word);
-
-			if (new_token.type == tt_none)
-				continue;
-			
-			tokens[token_count] = new_token;
-			break;
-		}
-		token_count++;
-		word = strtok(NULL, " ");
+		lexem_container->stream[lexem_container->count] = new_token;
+		lexem_container->count++;
+		break;
 	}
-	tokens[token_count] = (struct token){ .type = tt_endof };
+}
 
-	free(stream_copy);
+static struct forth_byte_code* tokenizer(const char* stream) {
+	int token_count = 0;
+	tokens_iterator(stream, tokens_count, &token_count);
 
-	return tokens;
+	struct token* tokens = calloc(token_count + 1, sizeof(struct token)); // +1 from add tt_endof token
+
+	struct forth_byte_code* lexem_container = (struct forth_byte_code*)malloc(sizeof(struct forth_byte_code));
+	if (lexem_container == NULL or tokens == NULL) {
+		return NULL;
+	}
+
+	lexem_container->stream = tokens;
+	lexem_container->count = 0;
+	tokens_iterator(stream, tokens_to_lexem, lexem_container);
+
+	tokens[token_count] = (struct token) { .type = tt_endof };
+
+	return lexem_container;
 }
 
 // ------------------------- VARIABLES OPERATIONS -------------------------
-
-static int stack_data[100];
-static int stack_top = 0;
-
-
-void stack_push(int value) {
-	stack_data[stack_top] = value;
-	stack_top++;
-}
-
-int stack_pop() {
-	stack_top--;
-	return stack_data[stack_top];
-}
-
-
-static int return_stack[10];
-static int return_stack_top = 0;
-
-
-void return_stack_push(int value) {
-	return_stack[return_stack_top] = value;
-	return_stack_top++;
-}
-
-int return_stack_pop() {
-	return_stack_top--;
-	return return_stack[return_stack_top];
-}
 
 enum named_type {
 	nt_constant,
@@ -224,148 +209,231 @@ struct named_any {
 	int data; // pointer from variable, jump position from function, value from constant
 };
 
-static struct named_any dictionary[100];
-static int dictionary_count = 0;
+struct forth_state {
+	// data segment
+	int* data_stack;
+	int data_stack_top;
 
-static int integer_memory[1000];
-static int integer_memory_pointer_top = 0;
+	// return segment
+	int* return_stack;
+	int return_stack_top;
+
+	// dictionary segment
+	struct named_any* dictionary;
+	int dictionary_count;
+
+	// memory segment
+	int* integer_memory;
+	int integer_memory_pointer_top;
+
+	// native functions
+	forth_native_function* native_functions;
+	int native_function_count;
+};
+
+struct forth_state* make_default_stack() {
+	struct forth_state* stack = malloc(sizeof(struct forth_state));
+	if (stack == NULL) {
+		return NULL;
+	}
+	stack->data_stack = calloc(50, sizeof(int));
+	stack->data_stack_top = 0;
+
+	stack->integer_memory = calloc(1000, sizeof(int));
+	stack->integer_memory_pointer_top = 0;
+
+	stack->return_stack = calloc(40, sizeof(int));
+	stack->return_stack_top = 0;
+
+	stack->dictionary = calloc(10, sizeof(struct named_any));
+	stack->dictionary_count = 0;
+
+	stack->native_functions = calloc(10, sizeof(forth_native_function));
+	stack->native_function_count = 0;
+	return stack;
+}
+
+void release_stack(struct forth_state* fs) {
+	free(fs->data_stack);
+	free(fs->integer_memory);
+	free(fs->return_stack);
+	free(fs->dictionary);
+}
+
+void release_forth_byte_code(struct forth_byte_code* fbc) {
+	for (int index = 0; ; index++) {
+		const struct token current_token = fbc->stream[index];
+		enum token_type current_token_type = current_token.type;
+
+		if (current_token_type == tt_string or current_token_type == tt_ident) {
+			free(current_token.data.name);
+		}
+
+		if(current_token_type == tt_endof) {
+			break;
+		}
+	}
+	free(fbc->stream);
+	free(fbc);
+}
+
+static void stack_push(struct forth_state* fs, int value) {
+	int index = fs->data_stack_top;
+	fs->data_stack[index] = value;
+	fs->data_stack_top++;
+}
+
+static int stack_pop(struct forth_state* fs) {
+	fs->data_stack_top--;
+	return fs->data_stack[fs->data_stack_top];
+}
+
+static void return_stack_push(struct forth_state* fs, int value) {
+	fs->return_stack[fs->return_stack_top] = value;
+	fs->return_stack_top++;
+}
+
+static int return_stack_pop(struct forth_state* fs) {
+	fs->return_stack_top--;
+	return fs->return_stack[fs->return_stack_top];
+}
 
 // ------------------------- STACK OPERATION -------------------------
 
 #define ftrue -1 // forth true
 #define ffalse 0 // forth false
 
-void dup_op() {
-	int value = stack_pop();
-	stack_push(value);
-	stack_push(value);
+static void dup_op(struct forth_state* fs) {
+	int value = stack_pop(fs);
+	stack_push(fs, value);
+	stack_push(fs, value);
 }
 
-void drop_op() {
-	stack_pop();
+static void drop_op(struct forth_state* fs) {
+	stack_pop(fs);
 }
 
-void swap_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
-	stack_push(value1);
-	stack_push(value2);
+static void swap_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
+	stack_push(fs, value1);
+	stack_push(fs, value2);
 }
 
-void over_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
-	stack_push(value2);
-	stack_push(value1);
-	stack_push(value2);
+static void over_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
+	stack_push(fs, value2);
+	stack_push(fs, value1);
+	stack_push(fs, value2);
 }
 
-void rot_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
-	int value3 = stack_pop();
-	stack_push(value2);
-	stack_push(value1);
-	stack_push(value3);
+static void rot_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
+	int value3 = stack_pop(fs);
+	stack_push(fs, value2);
+	stack_push(fs, value1);
+	stack_push(fs, value3);
 }
 // print value 
-void dot_op() { 
-	int value = stack_pop();
+static void dot_op(struct forth_state* fs) {
+	int value = stack_pop(fs);
 	printf("%d ", value); // dot operator make space
 }
 
 // print char
-void emit_op() { 
-	char value = (char)stack_pop();
+static void emit_op(struct forth_state* fs) {
+	char value = (char)stack_pop(fs);
 	printf("%c", value);
 }
 
 // print new line
-void cr_op() { 
+static void cr_op() {
 	printf("\n");
 }
 
 // ------------------------- BOOLEAN OPERATION -------------------------
-void equal_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
+static void equal_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
 
 	int result = value2 == value1 ? ftrue : ffalse;
-	stack_push(result);
+	stack_push(fs, result);
 }
 
-void great_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
+static void great_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
 
 	int result = value2 > value1 ? ftrue : ffalse;
-	stack_push(result);
+	stack_push(fs, result);
 }
 
-void less_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
+static void less_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
 
 	int result = value2 < value1 ? ftrue : ffalse;
-	stack_push(result);
+	stack_push(fs, result);
 }
 
-void invert_op() {
-	int value = stack_pop();
-	stack_push(~value);
+static void invert_op(struct forth_state* fs) {
+	int value = stack_pop(fs);
+	stack_push(fs, ~value);
 }
 
-void and_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
+static void and_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
 
 	if (value1 == ftrue && value2 == ftrue) {
-		stack_push(ftrue);
+		stack_push(fs, ftrue);
 	} else {
-		stack_push(ffalse);
+		stack_push(fs, ffalse);
 	}
 }
 
-void or_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
+static void or_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
 
 	if (value1 == ftrue || value2 == ftrue) {
-		stack_push(ftrue);
+		stack_push(fs, ftrue);
 	} else {
-		stack_push(false);
+		stack_push(fs, false);
 	}
 }
 
 // ------------------------- MATH OPERATION -------------------------
 
-void plus_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
-	stack_push(value1 + value2);
+static void plus_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
+	stack_push(fs, value1 + value2);
 }
 
-void minus_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
-	stack_push(value2 - value1);
+static void minus_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
+	stack_push(fs, value2 - value1);
 }
 
-void multiplication_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
-	stack_push(value2 * value1);
+static void multiplication_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
+	stack_push(fs, value2 * value1);
 }
 
-void dividing_op() {
-	int value1 = stack_pop();
-	int value2 = stack_pop();
-	stack_push(value2 / value1);
+static void dividing_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
+	stack_push(fs, value2 / value1);
 }
 
 // ------------------------- CONTROLL FLOW OPERATIONS -------------------------
 
-int find_controll_flow_token(const struct token* stream, int position, enum token_type incriment, enum token_type find) {
+static int find_controll_flow_token(const struct token* stream, int position, enum token_type incriment, enum token_type find) {
 	int temp_position = position + 1;
 	int if_stack = 0;
 	while (true) {
@@ -391,14 +459,14 @@ int find_controll_flow_token(const struct token* stream, int position, enum toke
 }
 
 
-int if_op(const struct token* stream, int position) {
-	int cmp = stack_pop();
+static int if_op(struct forth_state* fs, const struct token* stream, int position) {
+	int cmp = stack_pop(fs);
 
 	int find_else = find_controll_flow_token(stream, position, tt_if, tt_else);
 	int find_then = find_controll_flow_token(stream, position, tt_if, tt_then);
 
 	if (cmp == ftrue) {
-		return_stack_push(find_then);
+		return_stack_push(fs, find_then);
 		return position;
 	}
 
@@ -409,10 +477,14 @@ int if_op(const struct token* stream, int position) {
 	}
 }
 
-int dictionary_add(const struct token* stream, int position, enum named_type type, int data) {
+static void dictionary_add_from_name(struct forth_state* fs, const char* name, enum named_type type, int data) {
+	fs->dictionary[fs->dictionary_count] = (struct named_any){ .name = name, .data = data, .type = type };
+	fs->dictionary_count++;
+}
+
+static int dictionary_add_from_token(struct forth_state* fs, const struct token* stream, int position, enum named_type type, int data) {
 	const struct token name_token = stream[position + 1];
-	dictionary[dictionary_count] = (struct named_any){ .name = name_token.data.name, .data = data, .type = type };
-	dictionary_count++;
+	dictionary_add_from_name(fs, name_token.data.name, type, data);
 	if (type == nt_function) {
 		return find_controll_flow_token(stream, position, tt_none, tt_semicolon); // skip function body
 	} else {
@@ -420,239 +492,245 @@ int dictionary_add(const struct token* stream, int position, enum named_type typ
 	}
 }
 
-bool dictionary_get_push(const char* name) {
-	for (int i = 0; i < dictionary_count; i++) {
-		const struct named_any current = dictionary[i];
+static bool dictionary_get_push(struct forth_state* fs, const char* name) {
+	for (int i = 0; i < fs->dictionary_count; i++) {
+		const struct named_any current = fs->dictionary[i];
 		if (strcmp(current.name, name) == 0) {
-			stack_push(current.data);
-			stack_push(current.type);
+			stack_push(fs, current.data);
+			stack_push(fs, current.type);
 			return true;
 		}
 	}
 	return false;
 }
 
-void allot_op() {
-	int offset = stack_pop();
-	integer_memory_pointer_top += offset;
+static void allot_op(struct forth_state* fs) {
+	int offset = stack_pop(fs);
+	fs->integer_memory_pointer_top += offset;
 }
 
-int do_loop_start(const struct token* stream, int position) { // TODO rewrite danger with push stack and next loop
-	int start_index = stack_pop();
-	int end_index = stack_pop();
+static int do_loop_start(struct forth_state* fs, const struct token* stream, int position) { // TODO rewrite danger with push stack and next loop
+	int start_index = stack_pop(fs);
+	int end_index = stack_pop(fs);
 
 	if (start_index < end_index) {
-		return_stack_push(position);
-		return_stack_push(end_index);
-		return_stack_push(start_index);
+		return_stack_push(fs, position);
+		return_stack_push(fs, end_index);
+		return_stack_push(fs, start_index);
 		return position;
 	} else {
 		return find_controll_flow_token(stream, position, tt_do, tt_loop);
 	}
 }
 
-int do_loop_end(const struct token* stream, int position) {
-	int start_index = return_stack_pop();
-	int end_index = return_stack_pop();
-	int do_position = return_stack_pop();
+static int do_loop_end(struct forth_state* fs, const struct token* stream, int position) {
+	int start_index = return_stack_pop(fs);
+	int end_index = return_stack_pop(fs);
+	int do_position = return_stack_pop(fs);
 
 	start_index++;
 
 	if (start_index < end_index) {
-		return_stack_push(do_position);
-		return_stack_push(end_index);
-		return_stack_push(start_index);
+		return_stack_push(fs, do_position);
+		return_stack_push(fs, end_index);
+		return_stack_push(fs, start_index);
 		return do_position;
 	} else {
 		return position;
 	}
 }
 
-void loop_index_push() {
-	int i = return_stack_pop();
-	stack_push(i);
-	return_stack_push(i);
+static void loop_index_push(struct forth_state* fs) {
+	int i = return_stack_pop(fs);
+	stack_push(fs, i);
+	return_stack_push(fs, i);
 }
 
-void set_value() {
-	int pointer = stack_pop();
-	integer_memory[pointer] = stack_pop();
+static void set_value(struct forth_state* fs) {
+	int pointer = stack_pop(fs);
+	fs->integer_memory[pointer] = stack_pop(fs);
 }
 
-void get_value_of_variable() { // at @
-	int pointer = stack_pop();
-	stack_push(integer_memory[pointer]);
+static void get_value_of_variable(struct forth_state* fs) { // at @
+	int pointer = stack_pop(fs);
+	stack_push(fs, fs->integer_memory[pointer]);
 }
 
-int until_op() { // return jump position
-	int value = stack_pop();
+static int until_op(struct forth_state* fs) { // return jump position
+	int value = stack_pop(fs);
 	if (value == ftrue) {
-		return return_stack_pop();
+		return return_stack_pop(fs);
 	} else {
-		return_stack_pop();
+		return_stack_pop(fs);
 	}
 }
 
-int ident_op(const char* name, int position) {
-	if (not dictionary_get_push(name)) { // push data and type to stack
+static int ident_op(struct forth_state* fs, const char* name, int position) {
+	if (not dictionary_get_push(fs, name)) { // push data and type to stack
 		printf("Error name constant/variable/function nor found, what is: %s ?", name);
 		return;
 	}
 
 	// is type function jump to func body
-	int ident_type = stack_pop();
+	int ident_type = stack_pop(fs);
 	if (ident_type == (int)nt_function) {
-		return_stack_push(position);
-		return stack_pop();
+		return_stack_push(fs, position);
+		return stack_pop(fs);
 	}
+
+	if (ident_type == (int)nt_function_native) {
+		int native_function_index = stack_pop(fs);
+		fs->native_functions[native_function_index](fs);
+	}
+	return position;
 }
 
-int do_string_op(const struct token* stream, int position) { // print string
+static int do_string_op(struct forth_state* fs, const struct token* stream, int position) { // print string
 	printf("%s", stream[position + 1].data.string);
 	position++; // skip string token
 	return position;
 }
 
-void eval(const struct token* stream) {
+static void eval(struct forth_state* fs, const struct token* stream) {
 	for (int current_pos = 0; ; current_pos++) {
 		const struct token current_token = stream[current_pos];
 		enum token_type current_token_type = current_token.type;
 
 		switch (current_token_type) {
 		case tt_dup:
-			dup_op();
+			dup_op(fs);
 			break;
 
 		case tt_drop:
-			drop_op();
+			drop_op(fs);
 			break;
 
 		case tt_swap:
-			swap_op();
+			swap_op(fs);
 			break;
 
 		case tt_over:
-			over_op();
+			over_op(fs);
 			break;
 
 		case tt_rot:
-			rot_op();
+			rot_op(fs);
 			break;
 
 		case tt_dot:
-			dot_op();
+			dot_op(fs);
 			break;
 
 		case tt_emit:
 			break;
 
 		case tt_cr:
-			cr_op();
+			cr_op(fs);
 			break;
 
 		case tt_equal:
-			equal_op();
+			equal_op(fs);
 			break;
 
 		case tt_great:
-			great_op();
+			great_op(fs);
 			break;
 
 		case tt_less:
-			less_op();
+			less_op(fs);
 			break;
 
 		case tt_invert:
-			invert_op();
+			invert_op(fs);
 			break;
 
 		case tt_and:
-			and_op();
+			and_op(fs);
 			break;
 
 		case tt_or:
-			or_op();
+			or_op(fs);
 			break;
 
 		case tt_plus:
-			plus_op();
+			plus_op(fs);
 			break;
 
 		case tt_minus:
-			minus_op();
+			minus_op(fs);
 			break;
 
 		case tt_multip:
-			multiplication_op();
+			multiplication_op(fs);
 			break;
 
 		case tt_div:
-			dividing_op();
+			dividing_op(fs);
 			break;
 
 		case tt_at:
-			get_value_of_variable();
+			get_value_of_variable(fs);
 			break;
 
 		case tt_setvalue:
-			set_value();
+			set_value(fs);
 			break;
 
 		case tt_index:
-			loop_index_push();
+			loop_index_push(fs);
 			break;
 
 		case tt_allot:
-			allot_op();
+			allot_op(fs);
 			break;
 
 		case tt_begin:
-			return_stack_push(current_pos - 1);
+			return_stack_push(fs, current_pos - 1);
 			break;
 
 		case tt_value:
-			stack_push(current_token.data.integer);
+			stack_push(fs, current_token.data.integer);
 			break;
 
 		case tt_dotstring:
-			current_pos = do_string_op(stream, current_pos);
+			current_pos = do_string_op(fs, stream, current_pos);
 			break;
 
 		case tt_if:
-			current_pos = if_op(stream, current_pos);
+			current_pos = if_op(fs, stream, current_pos);
 			break;
 
 		case tt_do:
-			current_pos = do_loop_start(stream, current_pos);
+			current_pos = do_loop_start(fs, stream, current_pos);
 			break;
 
 		case tt_loop:
-			current_pos = do_loop_end(stream, current_pos); // jump to do token
+			current_pos = do_loop_end(fs, stream, current_pos); // jump to do token
 			break;
 
 		case tt_until:
-			current_pos = until_op();
+			current_pos = until_op(fs);
 			break;
 
 		case tt_constant:
-			current_pos = dictionary_add(stream, current_pos, nt_constant, stack_pop());
+			current_pos = dictionary_add_from_token(fs, stream, current_pos, nt_constant, stack_pop(fs));
 			break;
 
 		case tt_variable:
-			current_pos = dictionary_add(stream, current_pos, nt_variable, integer_memory_pointer_top);
-			integer_memory_pointer_top++;
+			current_pos = dictionary_add_from_token(fs, stream, current_pos, nt_variable, fs->integer_memory_pointer_top);
+			fs->integer_memory_pointer_top++;
 			break;
 
 		case tt_function:
-			current_pos = dictionary_add(stream, current_pos, nt_function, current_pos + 1);// +1 skip token name
+			current_pos = dictionary_add_from_token(fs, stream, current_pos, nt_function, current_pos + 1);// +1 skip token name
 			break;
 		case tt_ident:
-			current_pos = ident_op(current_token.data.name, current_pos);
+			current_pos = ident_op(fs, current_token.data.name, current_pos);
 			break;
 
 		case tt_else: // jump to then
 		case tt_semicolon: // jump to call function position 
-			current_pos = return_stack_pop();
+			current_pos = return_stack_pop(fs);
 			break;
 
 			// not used
@@ -673,17 +751,30 @@ void eval(const struct token* stream) {
 	}
 }
 
-struct forth_byte_code {
-	struct token* stream;
-};
+// ------------------------- PUBLIC API -------------------------
 
 const struct forth_byte_code* forth_compile(const char* script) {
-	struct forth_byte_code* byte_code = (struct forth_byte_code*)malloc(sizeof(struct forth_byte_code));
-	byte_code->stream = tokenizer(script);
-	return byte_code;
+	return tokenizer(script);
 }
 
+void forth_run(struct forth_state* fs, const struct forth_byte_code* script) {
+	eval(fs, script->stream);
+}
 
-void forth_run(const struct forth_byte_code* script) {
-	eval(script->stream);
+void forth_data_stack_push(struct forth_state* fs, int value) {
+	stack_push(fs, value);
+}
+
+int forth_data_stack_pop(struct forth_state* fs) {
+	return stack_pop(fs);
+}
+
+void forth_set_constant(struct forth_state* fs, const char* name, int value) {
+	dictionary_add_from_name(fs, name, nt_constant, value);
+}
+
+void forth_set_function(struct forth_state* fs, const char* name, forth_native_function func) {
+	dictionary_add_from_name(fs, name, nt_function_native, fs->native_function_count);
+	fs->native_functions[fs->native_function_count] = func;
+	fs->native_function_count += 1;
 }
