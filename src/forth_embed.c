@@ -231,26 +231,31 @@ struct forth_state {
 	int native_function_count;
 };
 
-struct forth_state* make_default_state() {
-	struct forth_state* stack = malloc(sizeof(struct forth_state));
-	if (stack == NULL) {
+struct forth_state* forth_make_state(int data_size, int integer_memory_size, int return_stack_size, int dictionary_size, int native_functions_size) {
+	struct forth_state* state = malloc(sizeof(struct forth_state));
+	if (state == NULL) {
 		return NULL;
 	}
-	stack->data_stack = calloc(50, sizeof(int));
-	stack->data_stack_top = 0;
 
-	stack->integer_memory = calloc(1000, sizeof(int));
-	stack->integer_memory_pointer_top = 0;
+	state->data_stack = calloc(data_size, sizeof(int));
+	state->data_stack_top = 0;
 
-	stack->return_stack = calloc(40, sizeof(int));
-	stack->return_stack_top = 0;
+	state->integer_memory = calloc(integer_memory_size, sizeof(int));
+	state->integer_memory_pointer_top = 0;
 
-	stack->dictionary = calloc(10, sizeof(struct named_any));
-	stack->dictionary_count = 0;
+	state->return_stack = calloc(return_stack_size, sizeof(int));
+	state->return_stack_top = 0;
+	
+	state->dictionary = calloc(dictionary_size, sizeof(struct named_any));
+	state->dictionary_count = 0;
+	
+	state->native_functions = calloc(native_functions_size, sizeof(forth_native_function));
+	state->native_function_count = 0;
+	return state;
+}
 
-	stack->native_functions = calloc(10, sizeof(forth_native_function));
-	stack->native_function_count = 0;
-	return stack;
+struct forth_state* forth_make_default_state() {
+	return forth_make_state(50, 1000, 40, 10, 10);
 }
 
 void release_state(struct forth_state* fs) {

@@ -12,7 +12,8 @@ int forth_data_stack_pop(struct forth_state* fs);
 
 
 // Create forth stack from run/eval program
-struct forth_state* make_default_state();
+struct forth_state* forth_make_default_state();
+struct forth_state* forth_make_state(int data_size, int integer_memory_size, int return_stack_size, int dictionary_size, int native_functions_size);
 void release_state(struct forth_state* fs);
 
 typedef void (*forth_native_function)(struct forth_state* fs);
