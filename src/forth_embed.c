@@ -234,19 +234,19 @@ struct forth_state* forth_make_state(int data_size, int integer_memory_size, int
 		return NULL;
 	}
 
-	state->data_stack = calloc(data_size, sizeof(int));
+	state->data_stack = calloc(data_size, sizeof(*state->data_stack));
 	state->data_stack_top = 0;
 
-	state->integer_memory = calloc(integer_memory_size, sizeof(int));
+	state->integer_memory = calloc(integer_memory_size, sizeof(*state->integer_memory));
 	state->integer_memory_pointer_top = 0;
 
-	state->return_stack = calloc(return_stack_size, sizeof(int));
+	state->return_stack = calloc(return_stack_size, sizeof(*state->return_stack));
 	state->return_stack_top = 0;
 	
-	state->dictionary = calloc(dictionary_size, sizeof(struct named_any));
+	state->dictionary = calloc(dictionary_size, sizeof(*state->dictionary));
 	state->dictionary_count = 0;
 	
-	state->native_functions = calloc(native_functions_size, sizeof(forth_native_function));
+	state->native_functions = calloc(native_functions_size, sizeof(*state->native_functions));
 	state->native_function_count = 0;
 	return state;
 }
@@ -255,14 +255,15 @@ struct forth_state* forth_make_default_state() {
 	return forth_make_state(50, 1000, 40, 10, 10);
 }
 
-void release_state(struct forth_state* fs) {
+void forth_release_state(struct forth_state* fs) {
 	free(fs->data_stack);
 	free(fs->integer_memory);
 	free(fs->return_stack);
 	free(fs->dictionary);
+	free(fs);
 }
 
-void release_forth_byte_code(struct forth_byte_code* fbc) {
+void forth_release_byte_code(struct forth_byte_code* fbc) {
 	for (int index = 0; index < fbc->count; index++) {
 		const struct token current_token = fbc->stream[index];
 		enum token_type current_token_type = current_token.type;
@@ -755,7 +756,7 @@ bool forth_run_function(struct forth_state* fs, const struct forth_byte_code* sc
 	if (not dictionary_get_push(fs, func_name)) {
 		return false;
 	}
-	drop_op(fs); // skip any type (type nt_function)
+	drop_op(fs); // skip type (type is nt_function)
 	int func_start_position = stack_pop(fs);
 	int func_end_position = find_controll_flow_token(script->stream, func_start_position, tt_none, tt_semicolon); // skip function body
 	eval(fs, script->stream, func_start_position, func_end_position);
