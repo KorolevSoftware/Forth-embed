@@ -1,20 +1,28 @@
 cmake_minimum_required(VERSION 3.14)
-project(test C)
-
-
+project(Forth-embed C)
 
 set(SOURCES
-  main.c
+  forth_embed.c
+  forth_embed.h
 )
-add_subdirectory(src)
-add_executable(${PROJECT_NAME} ${SOURCES})
+
+list(TRANSFORM SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+
+add_library(${PROJECT_NAME} STATIC ${SOURCES})
 
 if(MSVC)
   target_compile_options(${PROJECT_NAME} PRIVATE
     -Wall
+    # -WX
   )
 endif()
 
-target_link_libraries(${PROJECT_NAME}
-  Forth-embed
-)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+enable_testing()
+include(CTest)
+if(BUILD_TESTING)
+    add_definitions(-DFORTH_TEST_COMPONENTS)
+    add_subdirectory(tests)
+endif(BUILD_TESTING)
+
