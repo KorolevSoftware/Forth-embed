@@ -1,7 +1,8 @@
 # Forth-embed
 
-Use
+Data type only integer
 
+Use
 ```C
 #include "forth_embed.h"
 
