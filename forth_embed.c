@@ -472,7 +472,9 @@ COMPONENT_PRIVATE int if_op(struct forth_state* fs, const struct token* stream, 
 	int find_then = find_controll_flow_token(stream, position, tt_if, tt_then);
 
 	if (cmp == ftrue) {
-		return_stack_push(fs, find_then);
+		if(find_else > 0){
+			return_stack_push(fs, find_then);
+		}
 		return position;
 	}
 
@@ -734,6 +736,7 @@ COMPONENT_PRIVATE void eval(struct forth_state* fs, const struct token* stream, 
 			current_pos = ident_op(fs, current_token.data.name, current_pos);
 			break;
 
+		
 		case tt_else: // jump to then
 		case tt_semicolon: // jump to call function position 
 			current_pos = return_stack_pop(fs);
@@ -766,7 +769,7 @@ bool forth_run_function(struct forth_state* fs, const struct forth_byte_code* sc
 	drop_op(fs); // skip type (type is nt_function)
 	int func_start_position = stack_pop(fs);
 	int func_end_position = find_controll_flow_token(script->stream, func_start_position, tt_none, tt_semicolon); // skip function body
-	eval(fs, script->stream, func_start_position, func_end_position);
+	eval(fs, script->stream, func_start_position+1, func_end_position);
 	return true;
 }
 
