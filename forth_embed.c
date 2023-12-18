@@ -803,6 +803,6 @@ void forth_set_user_data(struct forth_state* fs, void* user_data) {
 	fs->user_data = user_data;
 }
 
-void forth_get_user_data(struct forth_state* fs) {
+void* forth_get_user_data(struct forth_state* fs) {
 	return fs->user_data;
 }
