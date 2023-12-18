@@ -2,7 +2,52 @@
 
 Data type only integer
 
-Use
+Stack operations:
+- dup
+- drop
+- swap
+- over
+- rot
+
+Prints:
+- emit
+- cr
+
+Сomparisons:
+- =
+- <
+- \>
+- invert
+- and
+- or
+
+Math:
+- \+
+- \-
+- /
+- \*
+
+ Controll flow:
+ - if
+ - else
+ - then
+ - do
+ - i
+ - loop
+ - begin
+ - until
+ - :
+ - ;
+
+Variables/Constants
+- constant
+- variable
+- allot
+- cells
+- @
+- !
+
+
 ```C
 #include "forth_embed.h"
 
