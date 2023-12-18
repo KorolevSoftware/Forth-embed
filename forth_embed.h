@@ -28,6 +28,7 @@ void forth_set_function(struct forth_state* fs, const char* name, forth_native_f
 void forth_run(struct forth_state* fs, const struct forth_byte_code* script);
 bool forth_run_function(struct forth_state* fs, const struct forth_byte_code* script, const char* func_name);
 
+void forth_set_user_data(struct forth_state* fs, void* user_data);
 
 // Compile and release functions
 const struct forth_byte_code* forth_compile(const char* script);

@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <stdbool.h>
 #include "iso646.h"
 
 #ifdef FORTH_TEST_COMPONENTS
@@ -233,55 +232,9 @@ struct forth_state {
 	// native functions
 	forth_native_function* native_functions;
 	int native_function_count;
+	void* user_data;
 };
 
-struct forth_state* forth_make_state(int data_size, int integer_memory_size, int return_stack_size, int dictionary_size, int native_functions_size) {
-	struct forth_state* state = malloc(sizeof(struct forth_state));
-	if (state == NULL) {
-		return NULL;
-	}
-
-	state->data_stack = calloc(data_size, sizeof(*state->data_stack));
-	state->data_stack_top = 0;
-
-	state->integer_memory = calloc(integer_memory_size, sizeof(*state->integer_memory));
-	state->integer_memory_pointer_top = 0;
-
-	state->return_stack = calloc(return_stack_size, sizeof(*state->return_stack));
-	state->return_stack_top = 0;
-	
-	state->dictionary = calloc(dictionary_size, sizeof(*state->dictionary));
-	state->dictionary_count = 0;
-	
-	state->native_functions = calloc(native_functions_size, sizeof(*state->native_functions));
-	state->native_function_count = 0;
-	return state;
-}
-
-struct forth_state* forth_make_default_state() {
-	return forth_make_state(50, 1000, 40, 10, 10);
-}
-
-void forth_release_state(struct forth_state* fs) {
-	free(fs->data_stack);
-	free(fs->integer_memory);
-	free(fs->return_stack);
-	free(fs->dictionary);
-	free(fs);
-}
-
-void forth_release_byte_code(struct forth_byte_code* fbc) {
-	for (int index = 0; index < fbc->count; index++) {
-		const struct token current_token = fbc->stream[index];
-		enum token_type current_token_type = current_token.type;
-
-		if (current_token_type == tt_string or current_token_type == tt_ident) {
-			free(current_token.data.name);
-		}
-	}
-	free(fbc->stream);
-	free(fbc);
-}
 
 COMPONENT_PRIVATE void stack_push(struct forth_state* fs, int value) {
 	int index = fs->data_stack_top;
@@ -564,12 +517,13 @@ COMPONENT_PRIVATE void get_value_of_variable(struct forth_state* fs) { // at @
 	stack_push(fs, fs->integer_memory[pointer]);
 }
 
-COMPONENT_PRIVATE int until_op(struct forth_state* fs) { // return jump position
+COMPONENT_PRIVATE int until_op(struct forth_state* fs, int current_pos) { // return jump position
 	int value = stack_pop(fs);
 	if (value == ftrue) {
 		return return_stack_pop(fs);
 	} else {
 		return_stack_pop(fs);
+		return current_pos;
 	}
 }
 
@@ -717,7 +671,7 @@ COMPONENT_PRIVATE void eval(struct forth_state* fs, const struct token* stream, 
 			break;
 
 		case tt_until:
-			current_pos = until_op(fs);
+			current_pos = until_op(fs, current_pos);
 			break;
 
 		case tt_constant:
@@ -732,6 +686,7 @@ COMPONENT_PRIVATE void eval(struct forth_state* fs, const struct token* stream, 
 		case tt_function:
 			current_pos = dictionary_add_from_token(fs, stream, current_pos, nt_function, current_pos + 1);// +1 skip token name
 			break;
+
 		case tt_ident:
 			current_pos = ident_op(fs, current_token.data.name, current_pos);
 			break;
@@ -757,6 +712,55 @@ COMPONENT_PRIVATE void eval(struct forth_state* fs, const struct token* stream, 
 }
 
 // ------------------------- PUBLIC API -------------------------
+
+
+struct forth_state* forth_make_state(int data_size, int integer_memory_size, int return_stack_size, int dictionary_size, int native_functions_size) {
+	struct forth_state* state = malloc(sizeof(struct forth_state));
+	if (state == NULL) {
+		return NULL;
+	}
+
+	state->data_stack = calloc(data_size, sizeof(*state->data_stack));
+	state->data_stack_top = 0;
+
+	state->integer_memory = calloc(integer_memory_size, sizeof(*state->integer_memory));
+	state->integer_memory_pointer_top = 0;
+
+	state->return_stack = calloc(return_stack_size, sizeof(*state->return_stack));
+	state->return_stack_top = 0;
+
+	state->dictionary = calloc(dictionary_size, sizeof(*state->dictionary));
+	state->dictionary_count = 0;
+
+	state->native_functions = calloc(native_functions_size, sizeof(*state->native_functions));
+	state->native_function_count = 0;
+	return state;
+}
+
+struct forth_state* forth_make_default_state() {
+	return forth_make_state(50, 1000, 40, 10, 10);
+}
+
+void forth_release_state(struct forth_state* fs) {
+	free(fs->data_stack);
+	free(fs->integer_memory);
+	free(fs->return_stack);
+	free(fs->dictionary);
+	free(fs);
+}
+
+void forth_release_byte_code(struct forth_byte_code* fbc) {
+	for (int index = 0; index < fbc->count; index++) {
+		const struct token current_token = fbc->stream[index];
+		enum token_type current_token_type = current_token.type;
+
+		if (current_token_type == tt_string or current_token_type == tt_ident) {
+			free(current_token.data.name);
+		}
+	}
+	free(fbc->stream);
+	free(fbc);
+}
 
 const struct forth_byte_code* forth_compile(const char* script) {
 	return tokenizer(script);
@@ -793,4 +797,8 @@ void forth_set_function(struct forth_state* fs, const char* name, forth_native_f
 	dictionary_add_from_name(fs, name, nt_function_native, fs->native_function_count);
 	fs->native_functions[fs->native_function_count] = func;
 	fs->native_function_count += 1;
+}
+
+void forth_set_user_data(struct forth_state* fs, void* user_data) {
+	fs->user_data = user_data;
 }
