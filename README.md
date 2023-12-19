@@ -73,6 +73,12 @@ forth_release_state(fs);
 forth_release_byte_code(program); 
 ```
 
+# TODO
+- add comments support
+- support string with space delimiter
+- make stable release
+- write more tests
+
 # Usings
 
 [Sima-Engine](https://github.com/KorolevSoftware/Sima-Engine) - game engine with forth from script engine
