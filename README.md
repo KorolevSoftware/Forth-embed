@@ -2,6 +2,10 @@
 
 Data type only integer
 
+!!!! Unsupported comments
+
+
+
 Stack operations:
 - dup
 - drop
@@ -12,6 +16,9 @@ Stack operations:
 Prints:
 - emit
 - cr
+- ."
+
+Print example: ```." hello_world"```
 
 Сomparisons:
 - =
