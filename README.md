@@ -1,8 +1,6 @@
 # Forth-embed
 
 Data type only integer
-
-!!!! Unsupported comments
 ## Coming soon release! check todo
 
 
