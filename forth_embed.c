@@ -29,7 +29,7 @@
 	TOKENS(tt_over, "over") \
 	TOKENS(tt_rot, "rot") \
 	TOKENS(tt_dot, ".") \
-	/* TOKENS(tt_dotstring, ".\"")*/ \
+	\
 	TOKENS(tt_emit, "emit") \
 	TOKENS(tt_cr, "cr") \
 	\
@@ -42,6 +42,7 @@
 	\
 	TOKENS(tt_plus, "+") \
 	TOKENS(tt_minus, "-") \
+	TOKENS(tt_mod, "mod") \
 	TOKENS(tt_multip, "*") \
 	TOKENS(tt_div, "/") \
 	\
@@ -148,7 +149,7 @@ struct forth_byte_code {
 typedef void(*token_iterator)(char* word, void* arg);
 
 COMPONENT_PRIVATE char* get_token(char* stream, char** next) {
-	if (strlen(stream) == 0) {
+	if (not stream or strlen(stream) == 0 or (*next) == NULL) {
 		return NULL;
 	}
 
@@ -183,9 +184,13 @@ COMPONENT_PRIVATE char* get_token(char* stream, char** next) {
 			}
 			stream++;
 		}
-		(*stream) = '\0'; // separate string to sub strings
-		stream++;
-		(*next) = stream;
+		if (strlen(stream) == 0) {
+			(*next) = NULL;
+		} else {
+			(*stream) = '\0'; // separate string to sub strings
+			stream++;
+			(*next) = stream;
+		}
 		return begin_token;
 	}
 	return NULL;
@@ -341,6 +346,9 @@ COMPONENT_PRIVATE void rot_op(struct forth_state* fs) {
 	stack_push(fs, value1);
 	stack_push(fs, value3);
 }
+
+// ------------------------- PRINT OPERATION -------------------------
+
 // print value 
 COMPONENT_PRIVATE void dot_op(struct forth_state* fs) {
 	int value = stack_pop(fs);
@@ -356,6 +364,11 @@ COMPONENT_PRIVATE void emit_op(struct forth_state* fs) {
 // print new line
 COMPONENT_PRIVATE void cr_op() {
 	printf("\n");
+}
+
+// print string
+COMPONENT_PRIVATE void do_string_op(const struct token current_token) { 
+	printf("%s", current_token.data.string);
 }
 
 // ------------------------- BOOLEAN OPERATION -------------------------
@@ -435,6 +448,13 @@ COMPONENT_PRIVATE void dividing_op(struct forth_state* fs) {
 	int value2 = stack_pop(fs);
 	stack_push(fs, value2 / value1);
 }
+
+COMPONENT_PRIVATE void mod_op(struct forth_state* fs) {
+	int value1 = stack_pop(fs);
+	int value2 = stack_pop(fs);
+	stack_push(fs, value2 % value1);
+}
+
 
 // ------------------------- CONTROLL FLOW OPERATIONS -------------------------
 
@@ -593,10 +613,6 @@ COMPONENT_PRIVATE int ident_op(struct forth_state* fs, const char* name, int pos
 	return position;
 }
 
-COMPONENT_PRIVATE void do_string_op(const struct token current_token) { // print string
-	printf("%s", current_token.data.string);
-}
-
 COMPONENT_PRIVATE void eval(struct forth_state* fs, const struct token* stream, int start_position, int end_poition) {
 	for (int current_pos = start_position; current_pos < end_poition; current_pos++) {
 		const struct token current_token = stream[current_pos];
@@ -672,6 +688,10 @@ COMPONENT_PRIVATE void eval(struct forth_state* fs, const struct token* stream, 
 
 		case tt_div:
 			dividing_op(fs);
+			break;
+
+		case tt_mod:
+			mod_op(fs);
 			break;
 
 		case tt_at:

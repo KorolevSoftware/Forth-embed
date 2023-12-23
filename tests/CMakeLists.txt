@@ -1,5 +1,6 @@
 set(SOURCES
   test_stack_operations.c
+  test_control_flow_operations.c
 )
 
 foreach(test ${SOURCES})

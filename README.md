@@ -33,6 +33,7 @@ Math:
 - \-
 - /
 - \*
+- mod
 
  Controll flow:
  - if
