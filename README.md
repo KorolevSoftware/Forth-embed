@@ -18,7 +18,7 @@ Prints:
 - cr
 - ."
 
-Print example: ```." hello_world"```
+Print example: ```."hello world"```
 
 Сomparisons:
 - =
@@ -74,8 +74,6 @@ forth_release_byte_code(program);
 ```
 
 # TODO
-- add comments support
-- support string with space delimiter
 - make stable release
 - write more tests
 

@@ -29,7 +29,7 @@
 	TOKENS(tt_over, "over") \
 	TOKENS(tt_rot, "rot") \
 	TOKENS(tt_dot, ".") \
-	TOKENS(tt_dotstring, ".\"") \
+	/* TOKENS(tt_dotstring, ".\"")*/ \
 	TOKENS(tt_emit, "emit") \
 	TOKENS(tt_cr, "cr") \
 	\
@@ -68,7 +68,7 @@
 enum token_type {
 	FOREACH_TOKENS(GENERATE_ENUM)
 	tt_ident,
-	tt_string,
+	tt_dotstring,
 	tt_value,
 
 	tt_none,
@@ -111,14 +111,14 @@ COMPONENT_PRIVATE struct token key_word_func_by(identifier) (const char* word) {
 	return (struct token) { .type = tt_ident, .data.name = strdup(word) };
 }
 
-COMPONENT_PRIVATE struct token key_word_func_by(string) (const char* word) {
+COMPONENT_PRIVATE struct token key_word_func_by(dotstring) (const char* word) {
 	int word_lenght = strlen(word);
-	if (word[word_lenght - 1] != '"')
+	if (word[word_lenght - 1] != '\"' or strncmp(".\"", word, 2) != 0)
 		return (struct token) { .type = tt_none };
 
-	char* word_dup = strdup(word);
-	word_dup[word_lenght-1] = '\0'; // set zero char to " position.
-	return (struct token) { .type = tt_string, .data.string = word_dup };
+	char* word_dup = strdup(word + 2); // +2 skip ." chars
+	word_dup[word_lenght - 3] = '\0'; // set zero char to " position. -3 skip "\0
+	return (struct token) { .type = tt_dotstring, .data.string = word_dup };
 }
 
 COMPONENT_PRIVATE struct token key_word_func_by(integer) (const char* word) {
@@ -136,7 +136,7 @@ COMPONENT_PRIVATE struct token_type_pair key_words[] = {
 	
 	/// Must be last
 	{tt_value, key_word_func_by(integer)},
-	{tt_string, key_word_func_by(string)},
+	{tt_dotstring, key_word_func_by(dotstring)},
 	{tt_ident, key_word_func_by(identifier)},
 };
 
@@ -147,15 +147,61 @@ struct forth_byte_code {
 
 typedef void(*token_iterator)(char* word, void* arg);
 
+COMPONENT_PRIVATE char* get_token(char* stream, char** next) {
+	if (strlen(stream) == 0) {
+		return NULL;
+	}
+
+	while (isspace(*stream) or not isprint(*stream)) { // skip first space, tabe end new line
+		stream++;
+	}
+
+	char* begin_token = stream;
+	
+	if (*stream) {
+		while(isprint(*stream) and not isspace(*stream)) {
+			if (*stream == '(') { // comments skip begin
+				while (true) {
+					if (*stream == ')') {
+						break;
+					}
+					stream++;
+				}
+				return get_token(++stream, next); 
+			}// comments skip end
+
+			if(*stream == '\"') { // string begin
+				stream++;
+				while (true) {
+					if (*stream == '\"') {
+						break;
+					}
+					stream++;
+				}
+				stream++;
+				break; // string end
+			}
+			stream++;
+		}
+		(*stream) = '\0'; // separate string to sub strings
+		stream++;
+		(*next) = stream;
+		return begin_token;
+	}
+	return NULL;
+}
+
 COMPONENT_PRIVATE void tokens_iterator(const char* stream, token_iterator func, void* arg) {
 	char* stream_copy = strdup(stream);
-	const char* delimiter = " \n\t";// space, new line, tab
-	char* word = strtok(stream_copy, delimiter);
+	char* iter = stream_copy;
+	char** next = &iter;// space, new line, tab
+	char* word = get_token(iter, next);
 	
 	while (word != NULL) {
 		func(word, arg);
-		word = strtok(NULL, " ");
+		word = get_token(*next, next);
 	}
+
 	free(stream_copy);
 }
 
@@ -547,10 +593,8 @@ COMPONENT_PRIVATE int ident_op(struct forth_state* fs, const char* name, int pos
 	return position;
 }
 
-COMPONENT_PRIVATE int do_string_op(struct forth_state* fs, const struct token* stream, int position) { // print string
-	printf("%s", stream[position + 1].data.string);
-	position++; // skip string token
-	return position;
+COMPONENT_PRIVATE void do_string_op(const struct token current_token) { // print string
+	printf("%s", current_token.data.string);
 }
 
 COMPONENT_PRIVATE void eval(struct forth_state* fs, const struct token* stream, int start_position, int end_poition) {
@@ -655,7 +699,7 @@ COMPONENT_PRIVATE void eval(struct forth_state* fs, const struct token* stream, 
 			break;
 
 		case tt_dotstring:
-			current_pos = do_string_op(fs, stream, current_pos);
+			do_string_op(current_token);
 			break;
 
 		case tt_if:
@@ -700,7 +744,7 @@ COMPONENT_PRIVATE void eval(struct forth_state* fs, const struct token* stream, 
 			// not used
 		case tt_then:
 		case tt_cells:
-		case tt_string:
+		//case tt_string:
 		case tt_none:
 			break;
 
@@ -754,7 +798,7 @@ void forth_release_byte_code(struct forth_byte_code* fbc) {
 		const struct token current_token = fbc->stream[index];
 		enum token_type current_token_type = current_token.type;
 
-		if (current_token_type == tt_string or current_token_type == tt_ident) {
+		if (current_token_type == tt_dotstring or current_token_type == tt_ident) {
 			free(current_token.data.name);
 		}
 	}
