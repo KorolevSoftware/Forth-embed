@@ -3,6 +3,7 @@
 Data type only integer
 ## Coming soon release! check todo
 
+VS-Code support!
 
 Stack operations:
 - dup
